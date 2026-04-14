@@ -1,0 +1,8 @@
+gymnasium>=0.29.0
+numpy>=1.24.0
+torch>=2.0.0
+matplotlib>=3.7.0
+tqdm>=4.65.0
+shimmy[dm-control]>=1.0.0
+dm_control>=1.0.0
+gymnasium[box2d]>=0.29.0
