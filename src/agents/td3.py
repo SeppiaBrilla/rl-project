@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+import gymnasium as gym
 
 from .base import BaseAgent
 from .networks import NatureCNN
@@ -77,6 +78,9 @@ class TD3Agent(BaseAgent):
         self.total_it = 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
+        if isinstance(action_space, gym.spaces.Discrete):
+            raise NotImplementedError("TD3Agent currently only supports continuous action spaces (Box).")
+            
         dim_act = action_space.shape[0]
         self.max_action = float(action_space.high[0]) if hasattr(action_space, 'high') else 1.0
 

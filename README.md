@@ -80,7 +80,27 @@ python train.py --env CarRacing-v3 --episodes 100 --save-model car_racing_ppo.pt
 python train.py --env dm_control/cartpole-swingup-v0 --episodes 200
 ```
 
+### Evaluation & Visualization
+
+Once training is complete, you can visualize the trained agent's performance using `evaluate.py`. This script loads the saved model weights and runs the agent in "human" rendering mode.
+
+**Example for CarRacing:**
+```bash
+python evaluate.py --env CarRacing-v3 --algo PPO --model-path car_racing_ppo.pt --episodes 5
+```
+
+**Example for CartPole:**
+```bash
+python evaluate.py --env CartPole-v1 --algo PPO --model-path model.pt --episodes 10
+```
+
 ### CLI Arguments
+- `--env`: Environment ID.
+- `--algo`: Algorithm type (`SAC`, `TD3`, `PPO`).
+- `--model-path`: Path to the `.pt` file containing trained weights.
+- `--episodes`: Number of evaluation episodes (default: 5).
+- `--seed`: Random seed.
+- `--no-render`: Disable visualization (run headless).
 - `--env`: Environment ID (standard Gym ID or `dm_control/[domain]-[task]-v0`).
 - `--algo`: Algorithm to use. Choices: `DQN`, `SAC`, `TD3`, `PPO` (default: `DQN`).
 - `--episodes`: Number of training episodes.

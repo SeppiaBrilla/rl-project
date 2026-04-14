@@ -4,6 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
 import numpy as np
+import gymnasium as gym
 
 from .base import BaseAgent
 from .networks import NatureCNN
@@ -86,6 +87,9 @@ class SACAgent(BaseAgent):
         self.gamma = gamma
         self.tau = tau
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        if isinstance(action_space, gym.spaces.Discrete):
+            raise NotImplementedError("SACAgent currently only supports continuous action spaces (Box).")
         
         dim_act = action_space.shape[0]
         self.max_action = float(action_space.high[0]) if hasattr(action_space, 'high') else 1.0

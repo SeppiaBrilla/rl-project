@@ -4,12 +4,15 @@ Placeholder for Custom DQN implementation
 from .base import BaseAgent
 import numpy as np
 
+import torch
+import numpy as np
+
 class DQNAgent(BaseAgent):
     def __init__(self, observation_space, action_space, lr=1e-3, gamma=0.99):
         super().__init__(observation_space, action_space)
         self.lr = lr
         self.gamma = gamma
-        self.device = "cpu"
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # TODO: Initialize Q-network and target Q-network here
         
     def select_action(self, state: np.ndarray, evaluate: bool = False):
@@ -26,3 +29,17 @@ class DQNAgent(BaseAgent):
         states, actions, rewards, next_states, dones = batch
         # TODO: Implement Q-learning TD error and backpropagation
         return {"loss": 0.0}
+
+    def save(self, filepath: str):
+        """
+        Save the agent parameters.
+        """
+        # TODO: Implement actual save logic
+        pass
+
+    def load(self, filepath: str):
+        """
+        Load the agent parameters.
+        """
+        # TODO: Implement actual load logic
+        pass
