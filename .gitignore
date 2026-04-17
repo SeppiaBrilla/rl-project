@@ -56,3 +56,4 @@ tmp_reference/
 *.fdb_latexmk
 *.fls
 *.synctex.gz
+*.blg

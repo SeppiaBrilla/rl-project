@@ -76,7 +76,6 @@
   University of Southern Denmark\\
   Odense, Denmark \\
   \texttt{alpel25@student.sdu.dk} \\
-  % examples of more authors
   \And
   Amancio Felipe Zani Da Silva \\
   Department of Mathematics and Computer Science\\
@@ -103,6 +102,40 @@ and the main takeaway of the proposed solution.
 
 \section{Related work}
 
+\paragraph{Policy Gradient Methods} The theoretical foundation of the algorithms studied in this work lies in policy gradient
+methods, which directly optimize a parameterized policy by following the gradient of the expected return. 
+Williams \cite{williams1992simple} introduced the REINFORCE algorithm, establishing the log-derivative trick as the basis for unbiased gradient estimation in stochastic policies. For continuous action spaces, this typically involves parameterizing the policy as a Gaussian distribution, where the actor network outputs a mean and variance from which actions are sampled. A persistent challenge in this family of methods is the high variance of the gradient estimator, especially over long 
+horizons. To mitigate this, Schulman et al. \cite{schulman2015high} proposed Generalized Advantage Estimation (GAE), a scheme 
+that uses value functions to reduce the variance of policy gradient estimates while introducing some bias by employing a discounted sum of temporal difference residuals as an estimate of the advantage function. 
+GAE remains a core component of most modern on-policy algorithms, including Proximal Policy Optimization (PPO) \cite{schulman2017proximal}. 
+However, GAE's variance reduction comes at the cost of requiring a trained value network: an auxiliary model that introduces its
+own approximation errors and doubles the number of parameters to optimize. The proposed continuous-action GRPO adaptation  explored in this work removes this dependency entirely, replacing the learned value baseline with group-relative reward normalization.
+
+\paragraph{Proximal Policy Optimization}
+PPO proposed a new family of policy gradient methods that alternate between sampling data through interaction with the environment and optimizing a surrogate objective function using stochastic gradient ascent, with some of the benefits of TRPO \cite{schulman2015trust} but much simpler to implement, more general, and with better sample complexity empirically. PPO's clipped surrogate objective prevents excessively large policy updates without the expensive second-order computations of TRPO. 
+
+PPO requires a learned critic network to compute GAE-based advantages, which adds memory overhead proportional to
+the policy network size and introduces a secondary optimization problem that can destabilize training.
+On-policy data collection further means that all experience gathered under the old policy is discarded after each update, resulting in relatively poor sample efficiency compared to off-policy methods. Finally, the clipping hyperparameter $\epsilon$ is sensitive to the reward scale and task horizon, often requiring per-environment tuning. GRPO directly addresses the first limitation by eliminating the critic and estimating advantages through group-relative normalization of sampled rewards, cutting memory requirements roughly in half. The on-policy nature and hyperparameter sensitivity, however, remain shared challenges in any PPO-derived on-policy method, including our adaptation.
+
+\paragraph{Deep Deterministic Policy Gradient (DDPG)}
+Lillicrap et al. \cite{lillicrap2020continuous} presented an actor-critic, model-free algorithm based on the deterministic policy gradient that can operate over continuous action spaces, adapting the ideas underlying the success of Deep Q-Learning. DDPG uses experience replay and target networks for stability, and its deterministic policy makes it more sample-efficient than stochastic on-policy counterparts.
+While very effective, DDPG is known to suffer from significant overestimation bias in the Q-function, which causes the actor to exploit erroneously high value estimates and leads to unstable policies. Its deterministic policy also requires explicit hand-crafted exploration noise, whose scale is an additional hyperparameter.
+
+\paragraph{Twin Delayed Deep Deterministic Policy Gradient (TD3)}
+TD3, proposed by Fujimoto et al. \cite{fujimoto2018addressing}, directly addresses the instabilities of DDPG through three targeted modifications: (i) Clipped Double Q-learning, (ii) Target network smoothing, and (iii) A two-timescale update schedule. By maintaining two independent critic networks and taking the minimum of their estimates as the Bellman target, TD3 significantly reduces overestimation bias. The delayed policy update prevents feedback loops between actor and critic updates.
+Despite its improvements over DDPG, TD3 retains a deterministic policy, which limits its ability to represent multimodal or inherently stochastic optimal behaviors. It relies on a fixed Gaussian exploration noise added at training time, which is tuned independently of the policy and does not adapt to the current state of learning. Off-policy methods built on temporal-difference learning are also susceptible to distributional shift when the replay buffer contains data collected under very different policy versions. GRPO, by contrast, maintains a stochastic policy that inherently represents action uncertainty, generates diverse rollouts through group sampling, and avoids Q-function approximation altogether, although at the cost of the sample efficiency benefits that off-policy replay provides.
+
+\paragraph{Soft Actor-Critic (SAC)}
+SAC \cite{haarnoja2018soft} takes a fundamentally different approach by framing the RL objective within the maximum entropy framework. In SAC, the actor aims to maximize expected reward while also maximizing entropy. This entropy regularization promotes exploration and robustness. \cite{haarnoja2018softApplications}
+
+SAC still requires a learned critic (in practice, two critics for stability), inheriting TD3's parameter overhead and susceptibility to value function approximation errors, albeit in a softer form due to entropy regularization. Its reliance on an experience replay buffer means it shares TD3's distributional shift concerns for rapidly changing policies. SAC also optimizes a modified, entropy-augmented objective rather than the pure expected return, which can make it difficult to directly compare its learning signal to that of on-policy methods. Additionally, the entropy temperature, even with automatic tuning, introduces a meta-level optimization that can slow convergence. GRPO addresses several of these concerns: it optimizes a surrogate of the true return without an auxiliary entropy term, uses no replay buffer, and controls policy conservatism through the KL divergence penalty against a reference policy rather than learned temperature parameters.
+
+\paragraph{Group Relative Policy Optimization (GRPO)}
+GRPO was introduced by Shao et al. \cite{shao2024deepseekmath} as part of DeepSeekMath and subsequently used as the core RL algorithm in DeepSeek-R1. GRPO is a variant of PPO that enhances mathematical reasoning abilities while concurrently optimizing the memory usage of PPO. Its central innovation is the elimination of the critic network: rather than learning a value function, GRPO forgoes the critic and estimates advantage by averaging rewards for multiple completions to the same prompt, with each token receiving the same advantage estimate. For each prompt, a group of G outputs is sampled; their rewards are normalized within the group to produce relative advantage estimates. GRPO also regularizes the update with a KL divergence penalty against a reference policy, directly in the loss rather than as a reward shaping term. 
+
+In its original formulation, GRPO is designed for discrete prediction settings where the policy is a categorical distribution over a finite set of actions. Adapting it to continuous action spaces introduces several non-trivial challenges. First, the per-action log-likelihood must be replaced by the log-density under a continuous distribution, whose unbounded support and unbounded log-density can produce numerically unstable importance ratios when actions lie in the tails. Second, GRPO's advantage normalization is calibrated to the comparative structure of language generation, where multiple full-sequence rewards provide a reliable empirical mean; in continuous control, episodes are shorter and reward signals are often denser, which may alter the statistical properties of the group-relative estimator. Third, the KL penalty in the original GRPO is computed between categorical distributions in closed form, while for Gaussian policies it requires either a closed-form expression under the diagonal Gaussian assumption or a Monte Carlo approximation.
+
 \section{Methodology}
 - Introduces the complete set of basic notation required to describe the key elements of the MDP of which
 the algorithm is built. (For the midway report) 
@@ -126,4 +159,6 @@ the project. (Complete results for PPO, SAC and TD3 for the midway report)
 Presents the limitation of the work and presents ideas about how this project can be pursued further 
 by the reader.
 
+\bibliographystyle{plain}
+\bibliography{references}
 \end{document}
