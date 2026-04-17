@@ -50,3 +50,9 @@ Thumbs.db
 tmp_reference/
 *.log
 .ipynb_checkpoints/
+*.aux
+*.out
+*.bbl
+*.fdb_latexmk
+*.fls
+*.synctex.gz
