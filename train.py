@@ -3,7 +3,9 @@ import gymnasium as gym
 import torch
 import numpy as np
 from tqdm import tqdm
+import pandas as pd
 
+import src
 from src.utils.logger import setup_logger
 from src.utils.buffer import ReplayBuffer, RolloutBuffer
 from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent
@@ -23,6 +25,7 @@ def main():
     args = parse_args()
     logger = setup_logger("Training")
     
+    episode_rewards = []
     # Set seeds for reproducibility
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -31,6 +34,7 @@ def main():
     # Otherwise, render_mode=None makes the env step as fast as possible.
     render_mode = "human" if args.render else None
     
+    logger.info(src.__file__)
     logger.info(f"Initializing {args.env} with render_mode={render_mode}")
     env = create_env(args.env, render_mode=render_mode)
     
@@ -90,8 +94,13 @@ def main():
             logger.info(f"Episode {episode + 1} | Reward: {episode_reward}")
         else:
             pbar.set_postfix({'Reward': f"{episode_reward:.2f}"})
-            
+        episode_rewards.append(episode_reward)
+    
+    df = pd.DataFrame({"episode": range(len(episode_rewards)), "reward": episode_rewards})
+    df.to_csv(f"results_{args.algo}_{args.env}.csv", index=False)   
+
     logger.info("Training finished.")
+
     if args.save_model:
         logger.info(f"Saving model to {args.save_model}")
         agent.save(args.save_model)
