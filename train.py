@@ -10,6 +10,8 @@ from src.utils.logger import setup_logger
 from src.utils.buffer import ReplayBuffer, RolloutBuffer
 from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent
 from src.env import create_env
+from src.utils.data_collector import DataCollector
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL Framework Training Script")
@@ -25,7 +27,6 @@ def main():
     args = parse_args()
     logger = setup_logger("Training")
     
-    episode_rewards = []
     # Set seeds for reproducibility
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -94,11 +95,10 @@ def main():
             logger.info(f"Episode {episode + 1} | Reward: {episode_reward}")
         else:
             pbar.set_postfix({'Reward': f"{episode_reward:.2f}"})
-        episode_rewards.append(episode_reward)
-    
-    df = pd.DataFrame({"episode": range(len(episode_rewards)), "reward": episode_rewards})
-    df.to_csv(f"results_{args.algo}_{args.env}.csv", index=False)   
+        
+        DataCollector.appendata(episode_reward=episode_reward)
 
+    DataCollector.createSave(args)
     logger.info("Training finished.")
 
     if args.save_model:
