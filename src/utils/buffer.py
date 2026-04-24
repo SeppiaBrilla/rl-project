@@ -82,7 +82,7 @@ class RolloutBuffer:
             delta = self.rewards[step] + gamma * next_value * next_non_terminal - self.values[step]
             self.advantages[step] = last_gae_lam = delta + gamma * gae_lambda * next_non_terminal * last_gae_lam
         
-        self.returns = self.advantages + self.values[:self.size]
+        self.returns[:self.size] = self.advantages[:self.size] + self.values[:self.size]
 
     def get_all(self):
         return (
@@ -99,3 +99,7 @@ class RolloutBuffer:
 
     def __len__(self):
         return self.size
+
+    @property
+    def full(self):
+        return self.size == self.capacity

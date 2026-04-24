@@ -22,13 +22,46 @@ class DQNAgent(BaseAgent):
         # TODO: Implement actual forward pass through Q-network
         return self.action_space.sample()
 
-    def update(self, batch):
+    def _update(self, batch):
         """
         Update the Q-network with a batch of transitions.
         """
         states, actions, rewards, next_states, dones = batch
         # TODO: Implement Q-learning TD error and backpropagation
         return {"loss": 0.0}
+
+    def train(self, env, num_epochs: int, logger, render: bool, results_file: str = "results.csv"):
+        from src.utils.buffer import ReplayBuffer
+        from tqdm import tqdm
+        
+        buffer = ReplayBuffer(capacity=100000, state_shape=self.observation_space.shape, 
+                             action_shape=self.action_space.shape, device=self.device)
+        
+        state, info = env.reset()
+        episode_reward = 0
+        episode_count = 0
+        
+        for epoch in tqdm(range(num_epochs)):
+            done = False
+            truncated = False
+            while not (done or truncated):
+                action = self.select_action(state)
+                next_state, reward, done, truncated, info = env.step(action)
+                
+                buffer.add(state, action, reward, next_state, done or truncated)
+                
+                if len(buffer) > 256:
+                    self._update(buffer.sample(256))
+                    
+                state = next_state
+                episode_reward += reward
+                
+            episode_count += 1
+            if render:
+                logger.info(f"Episode {episode_count} | Reward: {episode_reward:.2f}")
+            
+            state, info = env.reset()
+            episode_reward = 0
 
     def save(self, filepath: str):
         """

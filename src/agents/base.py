@@ -22,11 +22,42 @@ class BaseAgent(ABC):
         pass
 
     @abstractmethod
-    def update(self, *args, **kwargs):
+    def train(self, env, num_epochs: int, logger, render: bool, results_file: str = "results.csv"):
         """
-        Update the agent model/policy.
+        Train the agent.
+        Args:
+            env: environment to train on
+            num_epochs: number of training epochs
+            logger: logger instance
+            render: whether to render the environment
+            results_file: path to save training results
         """
         pass
+
+    def _evaluate(self, env, num_episodes=5):
+        """
+        Evaluate the agent in the environment.
+        Args:
+            env: environment to evaluate on
+            num_episodes: number of episodes to run
+        Returns:
+            list of cumulative rewards for each episode
+        """
+        rewards = []
+        for _ in range(num_episodes):
+            state, info = env.reset()
+            done = False
+            truncated = False
+            ep_reward = 0
+            while not (done or truncated):
+                action = self.select_action(state, evaluate=True)
+                # Unpack action if it's a tuple (e.g., PPO returns action and log_prob)
+                if isinstance(action, tuple):
+                    action = action[0]
+                state, reward, done, truncated, info = env.step(action)
+                ep_reward += reward
+            rewards.append(ep_reward)
+        return rewards
 
     def save(self, filepath: str):
         """

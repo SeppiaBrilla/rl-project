@@ -104,7 +104,7 @@ class SACAgent(BaseAgent):
 
         # Automatic entropy tuning
         self.target_entropy = target_entropy if target_entropy is not None else -float(dim_act)
-        self.log_alpha = torch.tensor([np.log(alpha)], requires_grad=True, device=self.device)
+        self.log_alpha = torch.tensor([np.log(alpha)], requires_grad=True, device=self.device, dtype=torch.float32)
         self.alpha_optim = optim.Adam([self.log_alpha], lr=lr)
 
     def select_action(self, state: np.ndarray, evaluate: bool = False):
@@ -114,7 +114,7 @@ class SACAgent(BaseAgent):
         action = mean if evaluate else action
         return action.cpu().numpy()[0]
 
-    def update(self, batch):
+    def _update(self, batch):
         states, actions, rewards, next_states, dones = batch
         rewards = rewards.unsqueeze(1)
         dones = dones.unsqueeze(1)
@@ -154,6 +154,80 @@ class SACAgent(BaseAgent):
             "actor_loss": actor_loss.item(),
             "alpha": self.log_alpha.exp().item()
         }
+
+    def train(self, env, num_epochs: int, logger, render: bool, results_file: str = "results.csv"):
+        from src.utils.buffer import ReplayBuffer
+        from tqdm import tqdm
+        
+        buffer = ReplayBuffer(capacity=1_000_000, state_shape=self.observation_space.shape, 
+                             action_shape=self.action_space.shape, device=self.device)
+        
+        state, info = env.reset()
+        episode_reward = 0
+        episode_count = 0
+        
+        results = []
+        epoch_losses = []
+        
+        for epoch in tqdm(range(num_epochs)):
+            done = False
+            truncated = False
+            while not (done or truncated):
+                action = self.select_action(state)
+                next_state, reward, done, truncated, info = env.step(action)
+                
+                buffer.add(state, action, reward, next_state, done or truncated)
+                
+                if len(buffer) > 256:
+                    losses = self._update(buffer.sample(256))
+                    epoch_losses.append(losses["critic_loss"])
+                    
+                state = next_state
+                episode_reward += reward
+                
+            episode_count += 1
+            if render:
+                logger.info(f"Episode {episode_count} | Reward: {episode_reward:.2f}")
+            
+            # Evaluation every 10 epochs
+            if (epoch + 1) % 10 == 0:
+                eval_rewards = self._evaluate(env, num_episodes=5)
+                # Convert numpy scalars to standard floats for clean CSV saving
+                eval_rewards = [float(r) for r in eval_rewards]
+                avg_loss = float(np.mean(epoch_losses)) if epoch_losses else 0.0
+                
+                results.append({
+                    "epoch": epoch + 1,
+                    "loss": avg_loss,
+                    "eval_reward_mean": float(np.mean(eval_rewards)),
+                    "eval_reward_std": float(np.std(eval_rewards)),
+                    "eval_reward_1": eval_rewards[0],
+                    "eval_reward_2": eval_rewards[1],
+                    "eval_reward_3": eval_rewards[2],
+                    "eval_reward_4": eval_rewards[3],
+                    "eval_reward_5": eval_rewards[4],
+                })
+                epoch_losses = [] # Reset losses for next period
+                
+                # Periodically save results
+                import csv
+                with open(results_file, 'w', newline='') as f:
+                    if results:
+                        writer = csv.DictWriter(f, fieldnames=results[0].keys())
+                        writer.writeheader()
+                        writer.writerows(results)
+                logger.info(f"Epoch {epoch+1} | Eval Reward: {np.mean(eval_rewards):.2f} +/- {np.std(eval_rewards):.2f}")
+
+            state, info = env.reset()
+            episode_reward = 0
+        
+        # Final save
+        import csv
+        with open(results_file, 'w', newline='') as f:
+            if results:
+                writer = csv.DictWriter(f, fieldnames=results[0].keys())
+                writer.writeheader()
+                writer.writerows(results)
 
     def save(self, filepath: str):
         torch.save({
