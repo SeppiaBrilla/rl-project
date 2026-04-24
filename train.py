@@ -3,11 +3,15 @@ import gymnasium as gym
 import torch
 import numpy as np
 from tqdm import tqdm
+import pandas as pd
 
+import src
 from src.utils.logger import setup_logger
 from src.utils.buffer import ReplayBuffer, RolloutBuffer
 from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent
 from src.env import create_env
+from src.utils.data_collector import DataCollector
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL Framework Training Script")
@@ -31,6 +35,7 @@ def main():
     # Otherwise, render_mode=None makes the env step as fast as possible.
     render_mode = "human" if args.render else None
     
+    logger.info(src.__file__)
     logger.info(f"Initializing {args.env} with render_mode={render_mode}")
     env = create_env(args.env, render_mode=render_mode)
     
@@ -90,8 +95,12 @@ def main():
             logger.info(f"Episode {episode + 1} | Reward: {episode_reward}")
         else:
             pbar.set_postfix({'Reward': f"{episode_reward:.2f}"})
-            
+        
+        DataCollector.appendata(episode_reward=episode_reward)
+
+    DataCollector.createSave(args)
     logger.info("Training finished.")
+
     if args.save_model:
         logger.info(f"Saving model to {args.save_model}")
         agent.save(args.save_model)
