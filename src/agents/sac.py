@@ -82,11 +82,12 @@ class Actor(nn.Module):
         return action, log_prob, mean
 
 class SACAgent(BaseAgent):
-    def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.99, tau=0.005, alpha=0.2, target_entropy=None):
+    def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.99, tau=0.005, alpha=0.2, batch_size=256, target_entropy=None):
         super().__init__(observation_space, action_space)
         self.gamma = gamma
         self.tau = tau
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.batch_size = batch_size
         
         if isinstance(action_space, gym.spaces.Discrete):
             raise NotImplementedError("SACAgent currently only supports continuous action spaces (Box).")
@@ -159,7 +160,7 @@ class SACAgent(BaseAgent):
         from src.utils.buffer import ReplayBuffer
         from tqdm import tqdm
         
-        buffer = ReplayBuffer(capacity=1_000_000, state_shape=self.observation_space.shape, 
+        buffer = ReplayBuffer(capacity=100_000, state_shape=self.observation_space.shape, 
                              action_shape=self.action_space.shape, device=self.device)
         
         state, info = env.reset()
@@ -179,7 +180,7 @@ class SACAgent(BaseAgent):
                 buffer.add(state, action, reward, next_state, done or truncated)
                 
                 if len(buffer) > 256:
-                    losses = self._update(buffer.sample(256))
+                    losses = self._update(buffer.sample(self.batch_size))
                     epoch_losses.append(losses["critic_loss"])
                     
                 state = next_state

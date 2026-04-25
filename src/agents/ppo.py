@@ -62,7 +62,7 @@ class Critic(nn.Module):
 
 class PPOAgent(BaseAgent):
     def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.999, gae_lambda=0.99,
-                 clip_ratio=0.2, epochs=10, K_epochs=100, batch_size=64, entropy_coef=0.001, max_grad_norm=0.5):
+                 clip_ratio=0.2, epochs=10, K_epochs=100, batch_size=128, entropy_coef=0.001, max_grad_norm=0.5):
         super().__init__(observation_space, action_space)
         self.gamma = gamma
         self.gae_lambda = gae_lambda
@@ -80,7 +80,7 @@ class PPOAgent(BaseAgent):
         self.actor = Actor(observation_space, dim_act).to(self.device)
         self.critic = Critic(observation_space).to(self.device)
         
-        self.action_logstd = nn.Parameter(torch.zeros(dim_act)).to(self.device)
+        self.action_logstd = nn.Parameter(torch.zeros(dim_act, device=self.device))
 
         self.actor_optim = optim.Adam(list(self.actor.parameters()) + ([self.action_logstd] if self.action_logstd is not None else []), lr=lr)
         self.critic_optim = optim.Adam(self.critic.parameters(), lr=lr)
