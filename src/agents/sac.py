@@ -40,7 +40,7 @@ class TwinCritic(nn.Module):
         return self.q1(features, action), self.q2(features, action)
 
 class Actor(nn.Module):
-    def __init__(self, observation_space, dim_act, hidden_dim=256, max_action=1.0):
+    def __init__(self, observation_space, dim_act, hidden_dim=256, action_low=None, action_high=None):
         super().__init__()
         shape = observation_space.shape
         if len(shape) == 3:
@@ -58,7 +58,10 @@ class Actor(nn.Module):
         )
         self.mean_linear = nn.Linear(hidden_dim, dim_act)
         self.log_std_linear = nn.Linear(hidden_dim, dim_act)
-        self.max_action = max_action
+        
+        # Store bounds as buffers for GPU/CPU consistency
+        self.register_buffer("action_low", torch.FloatTensor(action_low))
+        self.register_buffer("action_high", torch.FloatTensor(action_high))
 
     def forward(self, state):
         features = self.extractor(state)
@@ -74,28 +77,36 @@ class Actor(nn.Module):
         normal = Normal(mean, std)
         x_t = normal.rsample()
         y_t = torch.tanh(x_t)
-        action = y_t * self.max_action
+        
+        # Robust scaling to [low, high]
+        action = self.action_low + (y_t + 1.0) * 0.5 * (self.action_high - self.action_low)
+        
+        # Log-prob correction for tanh + scaling
         log_prob = normal.log_prob(x_t)
-        log_prob -= torch.log(self.max_action * (1 - y_t.pow(2)) + 1e-6)
+        log_prob -= torch.log(0.5 * (self.action_high - self.action_low) * (1 - y_t.pow(2)) + 1e-6)
         log_prob = log_prob.sum(1, keepdim=True)
-        mean = torch.tanh(mean) * self.max_action
+        
+        mean = self.action_low + (torch.tanh(mean) + 1.0) * 0.5 * (self.action_high - self.action_low)
         return action, log_prob, mean
 
 class SACAgent(BaseAgent):
-    def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.99, tau=0.005, alpha=0.2, batch_size=256, target_entropy=None):
+    def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.99, tau=0.005, alpha=0.2, 
+                 batch_size=256, target_entropy=None, min_samples=1000):
         super().__init__(observation_space, action_space)
         self.gamma = gamma
         self.tau = tau
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.batch_size = batch_size
+        self.min_samples = min_samples
         
         if isinstance(action_space, gym.spaces.Discrete):
             raise NotImplementedError("SACAgent currently only supports continuous action spaces (Box).")
         
         dim_act = action_space.shape[0]
-        self.max_action = float(action_space.high[0]) if hasattr(action_space, 'high') else 1.0
+        self.action_low = action_space.low
+        self.action_high = action_space.high
 
-        self.actor = Actor(observation_space, dim_act, max_action=self.max_action).to(self.device)
+        self.actor = Actor(observation_space, dim_act, action_low=self.action_low, action_high=self.action_high).to(self.device)
         self.critic = TwinCritic(observation_space, dim_act).to(self.device)
         self.critic_target = TwinCritic(observation_space, dim_act).to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
@@ -174,12 +185,16 @@ class SACAgent(BaseAgent):
             done = False
             truncated = False
             while not (done or truncated):
-                action = self.select_action(state)
+                # Warmup: sample random actions if buffer is too small
+                if len(buffer) < self.min_samples:
+                    action = self.action_space.sample()
+                else:
+                    action = self.select_action(state)
+                    
                 next_state, reward, done, truncated, info = env.step(action)
-                
                 buffer.add(state, action, reward, next_state, done or truncated)
                 
-                if len(buffer) > 256:
+                if len(buffer) >= self.min_samples:
                     losses = self._update(buffer.sample(self.batch_size))
                     epoch_losses.append(losses["critic_loss"])
                     

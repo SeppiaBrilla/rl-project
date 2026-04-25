@@ -44,7 +44,7 @@ class TwinCritic(nn.Module):
         return self.q1(features, action)
 
 class Actor(nn.Module):
-    def __init__(self, observation_space, dim_act, hidden_dim=256, max_action=1.0):
+    def __init__(self, observation_space, dim_act, hidden_dim=256, action_low=None, action_high=None):
         super().__init__()
         shape = observation_space.shape
         if len(shape) == 3:
@@ -62,15 +62,18 @@ class Actor(nn.Module):
             nn.Linear(hidden_dim, dim_act),
             nn.Tanh()
         )
-        self.max_action = max_action
+        self.register_buffer("action_low", torch.FloatTensor(action_low))
+        self.register_buffer("action_high", torch.FloatTensor(action_high))
 
     def forward(self, state):
         features = self.extractor(state)
-        return self.max_action * self.net(features)
+        y_t = self.net(features)
+        # Robust scaling to [low, high]
+        return self.action_low + (y_t + 1.0) * 0.5 * (self.action_high - self.action_low)
 
 class TD3Agent(BaseAgent):
     def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.99, tau=0.005, batch_size:int=256,
-                 policy_noise=0.2, noise_clip=0.5, policy_freq=2):
+                 policy_noise=0.2, noise_clip=0.5, policy_freq=2, min_samples=1000):
         super().__init__(observation_space, action_space)
         self.gamma = gamma
         self.tau = tau
@@ -78,6 +81,7 @@ class TD3Agent(BaseAgent):
         self.noise_clip = noise_clip
         self.policy_freq = policy_freq
         self.batch_size = batch_size
+        self.min_samples = min_samples
         self.total_it = 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -85,10 +89,11 @@ class TD3Agent(BaseAgent):
             raise NotImplementedError("TD3Agent currently only supports continuous action spaces (Box).")
             
         dim_act = action_space.shape[0]
-        self.max_action = float(action_space.high[0]) if hasattr(action_space, 'high') else 1.0
+        self.action_low = action_space.low
+        self.action_high = action_space.high
 
-        self.actor = Actor(observation_space, dim_act, max_action=self.max_action).to(self.device)
-        self.actor_target = Actor(observation_space, dim_act, max_action=self.max_action).to(self.device)
+        self.actor = Actor(observation_space, dim_act, action_low=self.action_low, action_high=self.action_high).to(self.device)
+        self.actor_target = Actor(observation_space, dim_act, action_low=self.action_low, action_high=self.action_high).to(self.device)
         self.actor_target.load_state_dict(self.actor.state_dict())
         self.actor_optim = optim.Adam(self.actor.parameters(), lr=lr)
 
@@ -102,8 +107,10 @@ class TD3Agent(BaseAgent):
         with torch.no_grad():
             action = self.actor(state).cpu().numpy()[0]
         if not evaluate:
-            noise = np.random.normal(0, self.max_action * 0.1, size=action.shape)
-            action = (action + noise).clip(-self.max_action, self.max_action)
+            # Scale noise width to the range width for consistent exploration
+            range_width = (self.action_high - self.action_low)
+            noise = np.random.normal(0, 0.1 * range_width, size=action.shape)
+            action = (action + noise).clip(self.action_low, self.action_high)
         return action
 
     def _update(self, batch):
@@ -114,7 +121,9 @@ class TD3Agent(BaseAgent):
 
         with torch.no_grad():
             noise = (torch.randn_like(actions) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
-            next_actions = (self.actor_target(next_states) + noise).clamp(-self.max_action, self.max_action)
+            next_actions = (self.actor_target(next_states) + noise).clamp(
+                self.actor_target.action_low, self.actor_target.action_high
+            )
 
             target_q1, target_q2 = self.critic_target(next_states, next_actions)
             target_q = rewards + (1 - dones) * self.gamma * torch.min(target_q1, target_q2)
@@ -162,12 +171,16 @@ class TD3Agent(BaseAgent):
             done = False
             truncated = False
             while not (done or truncated):
-                action = self.select_action(state)
+                # Warmup: sample random actions if buffer is too small
+                if len(buffer) < self.min_samples:
+                    action = self.action_space.sample()
+                else:
+                    action = self.select_action(state)
+                    
                 next_state, reward, done, truncated, info = env.step(action)
-                
                 buffer.add(state, action, reward, next_state, done or truncated)
                 
-                if len(buffer) > 256:
+                if len(buffer) >= self.min_samples:
                     losses = self._update(buffer.sample(self.batch_size))
                     epoch_losses.append(losses["critic_loss"])
                     

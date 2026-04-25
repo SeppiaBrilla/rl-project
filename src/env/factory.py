@@ -1,6 +1,7 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium.wrappers import FlattenObservation, ResizeObservation, GrayscaleObservation, FrameStackObservation
+from .wrappers import CarRacingActionWrapper
 
 class PyTorchImageWrapper(gym.ObservationWrapper):
     """
@@ -69,6 +70,10 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, *
         env = GrayscaleObservation(env, keep_dim=True)
         env = FrameStackObservation(env, 4)
         env = PyTorchImageWrapper(env)
+        
+        # Apply simplified actions for CarRacing by default
+        if "CarRacing" in env_id:
+            env = CarRacingActionWrapper(env)
     elif flatten_obs:
         if isinstance(env.observation_space, (gym.spaces.Dict, gym.spaces.Tuple)):
             env = FlattenObservation(env)

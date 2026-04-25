@@ -16,19 +16,14 @@ configs = {
     'PPO': {
         "CarRacing-v3": {
             # Agent initialization parameters
-            "lr": 1e-4,                    # Learning rate (lower for CNN stability)
-            "gamma": 0.99,                 # Discount factor
+            "lr": 1e-4,                    # Stable learning rate for CNN
+            "gamma": 0.99,                 # Standard discount
             "gae_lambda": 0.95,            # GAE lambda for advantage estimation
-            "clip_ratio": 0.2,             # PPO clipping parameter
-            "epochs": 10,                  # This seems unused in your code - remove or clarify
-            "K_epochs": 10,                # Number of optimization epochs per rollout (you use this)
-            "batch_size": 64,              # Mini-batch size for updates
-            "entropy_coef": 0.01,          # Entropy coefficient for exploration
+            "clip_ratio": 0.2,             # PPO clipping
+            "K_epochs": 10,                # 10 optimization epochs per rollout
+            "batch_size": 128,             # Increased for image stability
+            "entropy_coef": 0.01,          # Exploration bonus
             "max_grad_norm": 0.5,          # Gradient clipping
-            
-            # Training loop parameters
-            # "num_epochs": 4000,            # Total training epochs (episodes in your loop)
-            # "rollout_buffer_capacity": 512, # Smaller due to memory with images
             
             # Environment info
             # "observation_type": "image",   # Triggers NatureCNN in your Actor/Critic
@@ -79,24 +74,13 @@ configs = {
     },
     'SAC': {
         "CarRacing-v3": {
-            # Agent initialization parameters
-            "lr": 1e-4,                    # Learning rate
-            "gamma": 0.99,                 # Discount factor
-            "tau": 0.005,                  # Soft update coefficient
-            "alpha": 0.2,                  # Initial entropy coefficient
-            "target_entropy": None,        # Auto: -dim(action_space)
-
-            # Training loop parameters
-            # "num_epochs": 4000,            # Episodes to train
-            # "buffer_capacity": 200_000,    # Smaller for image observations
-            "batch_size": 256,             # Batch size for updates (you use 256 hardcoded)
-            # "min_buffer_size": 256,        # Start training after this many samples
-
-            # Environment info
-            # "observation_type": "image",
-            # "expected_episodes": "~4000 episodes, ~2M timesteps",
-
-            # Note: Your code hardcodes batch_size=256 in train() - consider parameterizing
+            "lr": 1e-4,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "alpha": 0.1,
+            "batch_size": 256,
+            "min_samples": 5000,
+            "note": "Uses 2D Simplified Actions via Wrapper"
         },
 
         "dm_control/cartpole-swingup-v0": {
@@ -119,46 +103,26 @@ configs = {
         },
         
         "dm_control/acrobot-swingup-v0": {
-            # Agent initialization parameters
             "lr": 3e-4,
             "gamma": 0.99,
             "tau": 0.005,
             "alpha": 0.2,
+            "min_samples": 2000,
             "target_entropy": None,
-            
-            # Training loop parameters
-            # "num_epochs": 1000,
-            # "buffer_capacity": 1_000_000,
-            # "batch_size": 256,
-            # "min_buffer_size": 256,
-            
-            # Environment info
-            # "observation_type": "vector",
             # "expected_episodes": "~1000 episodes, ~500K timesteps",
         }
     },
     'TD3':{
         "CarRacing-v3": {
-            # Agent initialization parameters
-            "lr": 1e-4,                    # Learning rate
-            "gamma": 0.99,                 # Discount factor
-            "tau": 0.005,                  # Soft update coefficient
-            "policy_noise": 0.2,           # Noise added to target policy
-            "noise_clip": 0.5,             # Clip range for target noise
-            "policy_freq": 2,              # Update policy every N critic updates
-            
-            # Training loop parameters
-            # "num_epochs": 4000,            # Episodes to train
-            # "buffer_capacity": 200_000,    # You use 10_000 - increase this!
-            "batch_size": 256,             # You hardcode 256 in train()
-            # "min_buffer_size": 256,
-            # "exploration_noise": 0.1,      # You use max_action * 0.1 in select_action
-            
-            # Environment info
-            # "observation_type": "image",
-            # "expected_episodes": "~4000 episodes, ~2M timesteps",
-            
-            # CRITICAL: Your buffer_capacity is only 10_000 - this is too small!
+            "lr": 1e-4,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "policy_noise": 0.2,
+            "noise_clip": 0.5,
+            "policy_freq": 2,
+            "batch_size": 256,
+            "min_samples": 5000,
+            "note": "Uses 2D Simplified Actions via Wrapper"
         },
         
         "dm_control/cartpole-swingup-v0": {
@@ -183,22 +147,13 @@ configs = {
         },
         
         "dm_control/acrobot-swingup-v0": {
-            # Agent initialization parameters
             "lr": 3e-4,
             "gamma": 0.99,
             "tau": 0.005,
             "policy_noise": 0.2,
             "noise_clip": 0.5,
             "policy_freq": 2,
-            
-            # Training loop parameters
-            # "num_epochs": 1000,
-            # "buffer_capacity": 1_000_000,
-            # "batch_size": 256,
-            # "min_buffer_size": 256,
-            # "exploration_noise": 0.1,
-            
-            # Environment info
+            "min_samples": 2000,
             # "observation_type": "vector",
             # "expected_episodes": "~1000 episodes, ~500K timesteps",
         }
