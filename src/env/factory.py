@@ -1,6 +1,6 @@
 import numpy as np
 import gymnasium as gym
-from gymnasium.wrappers import FlattenObservation, ResizeObservation, GrayscaleObservation, FrameStackObservation
+from gymnasium.wrappers import FlattenObservation, ResizeObservation, GrayscaleObservation, FrameStackObservation, MaxAndSkipObservation
 from .wrappers import CarRacingActionWrapper
 
 class PyTorchImageWrapper(gym.ObservationWrapper):
@@ -66,6 +66,7 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, *
     is_image = hasattr(obs_space, "shape") and obs_space.shape is not None and len(obs_space.shape) == 3
     
     if is_image:
+        env = MaxAndSkipObservation(env, 4)
         env = ResizeObservation(env, (84, 84))
         env = GrayscaleObservation(env, keep_dim=True)
         env = FrameStackObservation(env, 4)
@@ -79,5 +80,21 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, *
             env = FlattenObservation(env)
         elif hasattr(env.observation_space, "shape") and len(env.observation_space.shape) > 1:
             env = FlattenObservation(env)
+        
+    return env
+
+def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, **kwargs):
+    """
+    Creates a vectorized environment.
+    """
+    def make_env():
+        return create_env(env_id, render_mode=render_mode, **kwargs)
+    
+    if num_envs > 1:
+        # Use AsyncVectorEnv for true parallelism
+        env = gym.vector.AsyncVectorEnv([make_env for _ in range(num_envs)])
+    else:
+        # Use SyncVectorEnv for consistency even with 1 env
+        env = gym.vector.SyncVectorEnv([make_env])
         
     return env

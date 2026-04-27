@@ -1,4 +1,5 @@
 import torch
+import csv
 import torch.nn as nn
 from tqdm import tqdm
 import torch.optim as optim
@@ -86,13 +87,21 @@ class PPOAgent(BaseAgent):
         self.critic_optim = optim.Adam(self.critic.parameters(), lr=lr)
 
     def get_value(self, state):
-        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        if len(state.shape) == len(self.observation_space.shape):
+            state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        else:
+            state = torch.FloatTensor(state).to(self.device)
+            
         with torch.no_grad():
             value = self.critic(state)
-        return value.cpu().numpy()[0, 0]
+        return value.cpu().numpy().flatten() # Return array of values
 
     def select_action(self, state: np.ndarray, evaluate: bool = False):
-        state_ts = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        if len(state.shape) == len(self.observation_space.shape):
+            state_ts = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        else:
+            state_ts = torch.FloatTensor(state).to(self.device)
+
         with torch.no_grad():
             mean = self.actor(state_ts)
             std = self.action_logstd.exp().expand_as(mean)
@@ -103,48 +112,68 @@ class PPOAgent(BaseAgent):
             else:
                 action = dist.sample()
             
-            log_prob = dist.log_prob(action)
-            log_prob = log_prob.sum(dim=-1)
+            log_prob = dist.log_prob(action).sum(dim=-1)
         
-        return action.cpu().numpy()[0], log_prob.cpu().numpy()[0]
+        # Return as batch if input was batch
+        if len(state.shape) == len(self.observation_space.shape):
+            return action.cpu().numpy()[0], log_prob.cpu().numpy()[0]
+        return action.cpu().numpy(), log_prob.cpu().numpy()
 
     def train(self, env, num_epochs: int, logger, render: bool, results_file: str = "results.csv"):
         logger.info(f"Starting training for {num_epochs} epochs...")
         
+        n_envs = getattr(env, "num_envs", 1)
+        steps_per_rollout = 2000 // n_envs
+        rollout_capacity = steps_per_rollout * n_envs
+
         # Initialize buffer with the correct device
-        buffer = RolloutBuffer(capacity=2048, state_shape=self.observation_space.shape, 
-                               action_shape=self.action_space.shape, device=self.device)
+        buffer = RolloutBuffer(capacity=rollout_capacity, state_shape=self.observation_space.shape, 
+                              action_shape=self.action_space.shape, device=self.device)
         
-        state, info = env.reset()
-        episode_reward = 0
-        episode_count = 0
+        state = env.reset()
+        if isinstance(state, tuple): state = state[0]
+        
+        episode_rewards = np.zeros(n_envs)
+        episode_counts = 0
         
         results = []
         epoch_losses = []
 
         for epoch in tqdm(range(num_epochs)):
             # 1. Collect Rollouts
-            while not buffer.full:
+            for _ in range(steps_per_rollout):
                 action, log_prob = self.select_action(state)
                 value = self.get_value(state)
                 
-                next_state, reward, done, truncated, info = env.step(action)
-                buffer.add(state, action, reward, value, log_prob, done or truncated)
+                next_state, rewards, dones, truncateds, infos = env.step(action)
+                
+                # Combine done and truncated for transition storage and reward resetting
+                masks = np.logical_or(dones, truncateds)
+                
+                # Handle final observations for auto-resetting vectorized environments
+                # We bootstrap the value of the terminal state if an episode was truncated (timeout)
+                if isinstance(infos, dict) and "final_observation" in infos:
+                    has_final = infos.get("_final_observation", truncateds)
+                    for i in range(n_envs):
+                        if has_final[i] and infos["final_observation"][i] is not None and truncateds[i]:
+                            v_terminal = self.get_value(infos["final_observation"][i]).item()
+                            rewards[i] += self.gamma * v_terminal
+                
+                buffer.add_batch(state, action, rewards, value, log_prob, masks)
                 
                 state = next_state
-                episode_reward += reward
+                episode_rewards += rewards
                 
-                if done or truncated:
-                    episode_count += 1
-                    if render:
-                        logger.info(f"Episode {episode_count} | Reward: {episode_reward:.2f}")
-                    
-                    state, info = env.reset()
-                    episode_reward = 0
+                for i in range(n_envs):
+                    if masks[i]:
+                        episode_counts += 1
+                        episode_rewards[i] = 0
             
             # Compute returns and advantages for the collected rollout
-            last_value = 0.0 if (done or truncated) else self.get_value(state)
-            buffer.compute_returns_and_advantages(last_value, done or truncated, 
+            last_value = self.get_value(state) # Last value for each env
+            last_dones = masks.copy()
+            
+            buffer.compute_returns_and_advantages(last_value, last_dones, 
                                                    gamma=self.gamma, gae_lambda=self.gae_lambda)
             
             # 2. Update Policy and Value Networks
@@ -225,7 +254,6 @@ class PPOAgent(BaseAgent):
                 epoch_losses = [] # Reset losses for next period
                 
                 # Periodically save results
-                import csv
                 with open(results_file, 'w', newline='') as f:
                     if results:
                         writer = csv.DictWriter(f, fieldnames=results[0].keys())
@@ -234,7 +262,6 @@ class PPOAgent(BaseAgent):
                 logger.info(f"Epoch {epoch+1} | Eval Reward: {np.mean(eval_rewards):.2f} +/- {np.std(eval_rewards):.2f}")
 
         # Final save
-        import csv
         with open(results_file, 'w', newline='') as f:
             if results:
                 writer = csv.DictWriter(f, fieldnames=results[0].keys())
@@ -261,4 +288,3 @@ class PPOAgent(BaseAgent):
         if 'actor_optim_state_dict' in checkpoint:
             self.actor_optim.load_state_dict(checkpoint['actor_optim_state_dict'])
             self.critic_optim.load_state_dict(checkpoint['critic_optim_state_dict'])
-

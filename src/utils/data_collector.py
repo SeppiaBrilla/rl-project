@@ -1,10 +1,10 @@
 from abc import abstractmethod
 from dataclasses import dataclass
-import pandas as pd
+import csv
+import os
 
 @dataclass
-class DataCollector : 
-
+class DataCollector: 
     """
     A utility class for tracking and persisting reinforcement learning training data.
     
@@ -25,7 +25,7 @@ class DataCollector :
     @staticmethod
     def createSave(args):
         """
-        Converts the collected rewards into a Pandas DataFrame and exports to CSV.
+        Converts the collected rewards into a structured CSV format.
         
         The filename is dynamically generated using the algorithm and environment 
         names provided in the args object.
@@ -34,6 +34,9 @@ class DataCollector :
             args: An object (typically argparse.Namespace) containing 'algo' 
                   and 'env' attributes for naming the output file.
         """
-        dataframe = pd.DataFrame({"episode": range(len(DataCollector.episode_rewards_list)), "reward": DataCollector.episode_rewards_list}) #saving data to dataFrame
-        dataframe.to_csv(f"results_{args.algo}_{args.env}.csv", index=False)  #save to file
-
+        filename = f"results_{args.algo}_{args.env}.csv"
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["episode", "reward"])
+            for i, r in enumerate(DataCollector.episode_rewards_list):
+                writer.writerow([i, r])

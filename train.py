@@ -80,36 +80,24 @@ configs = {
             "alpha": 0.1,
             "batch_size": 256,
             "min_samples": 5000,
-            "note": "Uses 2D Simplified Actions via Wrapper"
         },
 
         "dm_control/cartpole-swingup-v0": {
-            # Agent initialization parameters
             "lr": 3e-4,
             "gamma": 0.99,
             "tau": 0.005,
-            "alpha": 0.2,
-            "target_entropy": None,        # Auto: -1 for 1D action space
-            
-            # Training loop parameters
-            # "num_epochs": 600,             # Fewer episodes needed (off-policy is efficient)
-            # "buffer_capacity": 1_000_000,
-            # "batch_size": 256,
-            # "min_buffer_size": 256,
-            
-            # Environment info
-            # "observation_type": "vector",
-            # "expected_episodes": "~600 episodes, ~300K timesteps",
+            "alpha": 1.0,
+            "min_samples": 5000,
+            "target_entropy": None,
         },
         
         "dm_control/acrobot-swingup-v0": {
             "lr": 3e-4,
             "gamma": 0.99,
             "tau": 0.005,
-            "alpha": 0.2,
-            "min_samples": 2000,
+            "alpha": 1.0,
+            "min_samples": 10000,
             "target_entropy": None,
-            # "expected_episodes": "~1000 episodes, ~500K timesteps",
         }
     },
     'TD3':{
@@ -122,7 +110,6 @@ configs = {
             "policy_freq": 2,
             "batch_size": 256,
             "min_samples": 5000,
-            "note": "Uses 2D Simplified Actions via Wrapper"
         },
         
         "dm_control/cartpole-swingup-v0": {
@@ -153,9 +140,7 @@ configs = {
             "policy_noise": 0.2,
             "noise_clip": 0.5,
             "policy_freq": 2,
-            "min_samples": 2000,
-            # "observation_type": "vector",
-            # "expected_episodes": "~1000 episodes, ~500K timesteps",
+            "min_samples": 10000,
         }
     }
 }
@@ -170,6 +155,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--save-model", type=str, default=None, help="Path to save the model upon completion")
     parser.add_argument("--results-file", type=str, default="results.csv", help="Path to save the training results (csv)")
+    parser.add_argument("--n-envs", type=int, default=1, help="Number of parallel environments")
     return parser.parse_args()
 
 def main():
@@ -184,18 +170,19 @@ def main():
     # Otherwise, render_mode=None makes the env step as fast as possible.
     render_mode = "human" if args.render else None
     
-    logger.info(f"Initializing {args.env} with render_mode={render_mode}")
-    env = create_env(args.env, render_mode=render_mode)
+    logger.info(f"Initializing {args.env} with {args.n_envs} environments, render_mode={render_mode}")
+    from src.env import create_vector_env
+    env = create_vector_env(args.env, num_envs=args.n_envs, render_mode=render_mode)
     
-    # Initialize Agent
+    # Initialize Agent using single_observation_space/single_action_space
     if args.algo == "DQN":
-        agent = DQNAgent(env.observation_space, env.action_space)
+        agent = DQNAgent(env.single_observation_space, env.single_action_space)
     elif args.algo == "SAC":
-        agent = SACAgent(env.observation_space, env.action_space, **configs["SAC"][args.env])
+        agent = SACAgent(env.single_observation_space, env.single_action_space, **configs["SAC"][args.env])
     elif args.algo == "TD3":
-        agent = TD3Agent(env.observation_space, env.action_space, **configs["TD3"][args.env])
+        agent = TD3Agent(env.single_observation_space, env.single_action_space, **configs["TD3"][args.env])
     elif args.algo == "PPO":
-        agent = PPOAgent(env.observation_space, env.action_space, **configs["PPO"][args.env])
+        agent = PPOAgent(env.single_observation_space, env.single_action_space, **configs["PPO"][args.env])
     else:
         raise NotImplementedError(f"Algorithm {args.algo} not implemented")
         

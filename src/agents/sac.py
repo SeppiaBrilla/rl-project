@@ -1,4 +1,5 @@
 import torch
+import csv
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -120,11 +121,18 @@ class SACAgent(BaseAgent):
         self.alpha_optim = optim.Adam([self.log_alpha], lr=lr)
 
     def select_action(self, state: np.ndarray, evaluate: bool = False):
-        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        if len(state.shape) == len(self.observation_space.shape):
+            state_ts = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        else:
+            state_ts = torch.FloatTensor(state).to(self.device)
+            
         with torch.no_grad():
-            action, _, mean = self.actor.sample(state)
+            action, _, mean = self.actor.sample(state_ts)
         action = mean if evaluate else action
-        return action.cpu().numpy()[0]
+        
+        if len(state.shape) == len(self.observation_space.shape):
+            return action.cpu().numpy()[0]
+        return action.cpu().numpy()
 
     def _update(self, batch):
         states, actions, rewards, next_states, dones = batch
@@ -174,36 +182,50 @@ class SACAgent(BaseAgent):
         buffer = ReplayBuffer(capacity=100_000, state_shape=self.observation_space.shape, 
                              action_shape=self.action_space.shape, device=self.device)
         
-        state, info = env.reset()
-        episode_reward = 0
+        state = env.reset()
+        if isinstance(state, tuple): state = state[0]
+        
+        n_envs = getattr(env, "num_envs", 1)
+        episode_rewards = np.zeros(n_envs)
         episode_count = 0
         
         results = []
         epoch_losses = []
         
         for epoch in tqdm(range(num_epochs)):
-            done = False
-            truncated = False
-            while not (done or truncated):
+            for _ in range(2000 // n_envs):
                 # Warmup: sample random actions if buffer is too small
                 if len(buffer) < self.min_samples:
-                    action = self.action_space.sample()
+                    action = env.action_space.sample()
                 else:
                     action = self.select_action(state)
                     
-                next_state, reward, done, truncated, info = env.step(action)
-                buffer.add(state, action, reward, next_state, done or truncated)
+                next_state, rewards, dones, truncateds, infos = env.step(action)
+                masks = np.logical_or(dones, truncateds)
+                
+                real_next_state = next_state.copy()
+                if isinstance(infos, dict) and "final_observation" in infos:
+                    has_final = infos.get("_final_observation", masks)
+                    for i in range(n_envs):
+                        if has_final[i] and infos["final_observation"][i] is not None:
+                            real_next_state[i] = infos["final_observation"][i]
+                            
+                # For off-policy agents, we only want to stop bootstrapping if terminated.
+                # If truncated, we bootstrap from the final_observation.
+                buffer.add_batch(state, action, rewards, real_next_state, dones)
                 
                 if len(buffer) >= self.min_samples:
-                    losses = self._update(buffer.sample(self.batch_size))
-                    epoch_losses.append(losses["critic_loss"])
+                    for _ in range(n_envs):
+                        losses = self._update(buffer.sample(self.batch_size))
+                        epoch_losses.append(losses["critic_loss"])
                     
                 state = next_state
-                episode_reward += reward
+                episode_rewards += rewards
                 
-            episode_count += 1
-            if render:
-                logger.info(f"Episode {episode_count} | Reward: {episode_reward:.2f}")
+                for i in range(n_envs):
+                    if masks[i]:
+                        episode_count += 1
+                        episode_rewards[i] = 0
             
             # Evaluation every 10 epochs
             if (epoch + 1) % 10 == 0:
@@ -226,19 +248,14 @@ class SACAgent(BaseAgent):
                 epoch_losses = [] # Reset losses for next period
                 
                 # Periodically save results
-                import csv
                 with open(results_file, 'w', newline='') as f:
                     if results:
                         writer = csv.DictWriter(f, fieldnames=results[0].keys())
                         writer.writeheader()
                         writer.writerows(results)
                 logger.info(f"Epoch {epoch+1} | Eval Reward: {np.mean(eval_rewards):.2f} +/- {np.std(eval_rewards):.2f}")
-
-            state, info = env.reset()
-            episode_reward = 0
         
         # Final save
-        import csv
         with open(results_file, 'w', newline='') as f:
             if results:
                 writer = csv.DictWriter(f, fieldnames=results[0].keys())

@@ -43,21 +43,50 @@ class BaseAgent(ABC):
         Returns:
             list of cumulative rewards for each episode
         """
+        is_vector = hasattr(env, "num_envs")
+        n_envs = env.num_envs if is_vector else 1
+        
         rewards = []
-        for _ in range(num_episodes):
-            state, info = env.reset()
-            done = False
-            truncated = False
-            ep_reward = 0
-            while not (done or truncated):
+        while len(rewards) < num_episodes:
+            state = env.reset()
+            if isinstance(state, tuple): state = state[0]
+            
+            done = np.zeros(n_envs, dtype=bool)
+            ep_rewards = np.zeros(n_envs)
+            
+            # For vector env, we run until all environments in the batch are done once
+            # or we just collect finished episodes.
+            # However, VectorEnv auto-resets. This makes sequential evaluation tricky.
+            # Best is to run the vector env and collect 'info' which contains final rewards.
+            
+            finished_episodes = 0
+            while finished_episodes < n_envs and len(rewards) < num_episodes:
                 action = self.select_action(state, evaluate=True)
-                # Unpack action if it's a tuple (e.g., PPO returns action and log_prob)
-                if isinstance(action, tuple):
-                    action = action[0]
-                state, reward, done, truncated, info = env.step(action)
-                ep_reward += reward
-            rewards.append(ep_reward)
-        return rewards
+                if isinstance(action, tuple): action = action[0]
+                
+                state, reward, dones, truncateds, infos = env.step(action)
+                masks = np.logical_or(dones, truncateds)
+                
+                ep_rewards += reward
+                if is_vector:
+                    for i in range(n_envs):
+                        if masks[i]:
+                            rewards.append(float(ep_rewards[i]))
+                            ep_rewards[i] = 0
+                            finished_episodes += 1
+                else:
+                    # Single env (or old gym style)
+                    if masks if not np.isscalar(masks) else masks:
+                        # Extract scalar if it's an array
+                        val = ep_rewards.item() if hasattr(ep_rewards, "item") else ep_rewards
+                        rewards.append(float(val))
+                        break
+            
+            if not is_vector:
+                # If it's a single env, we only need to break once
+                if len(rewards) >= num_episodes: break
+
+        return rewards[:num_episodes]
 
     def save(self, filepath: str):
         """

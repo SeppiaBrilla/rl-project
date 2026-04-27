@@ -20,7 +20,9 @@ class DQNAgent(BaseAgent):
         Epsilon greedy action selection (placeholder)
         """
         # TODO: Implement actual forward pass through Q-network
-        return self.action_space.sample()
+        if len(state.shape) == len(self.observation_space.shape):
+            return self.action_space.sample()
+        return np.array([self.action_space.sample() for _ in range(state.shape[0])])
 
     def _update(self, batch):
         """
@@ -37,31 +39,32 @@ class DQNAgent(BaseAgent):
         buffer = ReplayBuffer(capacity=100000, state_shape=self.observation_space.shape, 
                              action_shape=self.action_space.shape, device=self.device)
         
-        state, info = env.reset()
-        episode_reward = 0
+        state = env.reset()
+        if isinstance(state, tuple): state = state[0]
+        
+        n_envs = getattr(env, "num_envs", 1)
+        episode_rewards = np.zeros(n_envs)
         episode_count = 0
         
         for epoch in tqdm(range(num_epochs)):
-            done = False
-            truncated = False
-            while not (done or truncated):
+            for _ in range(1000 // n_envs):
                 action = self.select_action(state)
-                next_state, reward, done, truncated, info = env.step(action)
+                next_state, rewards, dones, truncateds, infos = env.step(action)
+                masks = np.logical_or(dones, truncateds)
                 
-                buffer.add(state, action, reward, next_state, done or truncated)
+                buffer.add_batch(state, action, rewards, next_state, masks)
                 
                 if len(buffer) > 256:
-                    self._update(buffer.sample(256))
+                    for _ in range(n_envs):
+                        self._update(buffer.sample(256))
                     
                 state = next_state
-                episode_reward += reward
+                episode_rewards += rewards
                 
-            episode_count += 1
-            if render:
-                logger.info(f"Episode {episode_count} | Reward: {episode_reward:.2f}")
-            
-            state, info = env.reset()
-            episode_reward = 0
+                for i in range(n_envs):
+                    if masks[i]:
+                        episode_count += 1
+                        episode_rewards[i] = 0
 
     def save(self, filepath: str):
         """
