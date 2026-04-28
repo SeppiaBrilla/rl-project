@@ -92,7 +92,7 @@ class Actor(nn.Module):
 
 class SACAgent(BaseAgent):
     def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.99, tau=0.005, alpha=0.2, 
-                 batch_size=256, target_entropy=None, min_samples=1000):
+                 batch_size=256, target_entropy=None, min_samples=1000, **kwargs):
         super().__init__(observation_space, action_space)
         self.gamma = gamma
         self.tau = tau
