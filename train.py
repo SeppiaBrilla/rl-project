@@ -16,7 +16,7 @@ configs = {
     'PPO': {
         "CarRacing-v3": {
             # Agent initialization parameters
-            "lr": 1e-4,                    # Stable learning rate for CNN
+            "lr": 5e-5,                    # Stable learning rate for CNN
             "gamma": 0.99,                 # Standard discount
             "gae_lambda": 0.95,            # GAE lambda for advantage estimation
             "clip_ratio": 0.2,             # PPO clipping
@@ -32,7 +32,7 @@ configs = {
         
         "dm_control/cartpole-swingup-v0": {
             # Agent initialization parameters
-            "lr": 3e-4,
+            "lr": 5e-5,
             "gamma": 0.99,
             "gae_lambda": 0.95,
             "clip_ratio": 0.2,
@@ -53,7 +53,7 @@ configs = {
 
         "dm_control/acrobot-swingup-v0": {
             # Agent initialization parameters
-            "lr": 3e-4,
+            "lr": 5e-5,
             "gamma": 0.99,
             "gae_lambda": 0.95,
             "clip_ratio": 0.2,
@@ -62,6 +62,8 @@ configs = {
             "batch_size": 64,
             "entropy_coef": 0.005,         # More exploration for complex dynamics
             "max_grad_norm": 0.5,
+            "normalize_obs": False,
+            "shape_reward": True,
 
             # Training loop parameters
             # "num_epochs": 2000,
@@ -83,7 +85,7 @@ configs = {
         },
 
         "dm_control/cartpole-swingup-v0": {
-            "lr": 3e-4,
+            "lr": 5e-5,
             "gamma": 0.99,
             "tau": 0.005,
             "alpha": 1.0,
@@ -92,12 +94,14 @@ configs = {
         },
         
         "dm_control/acrobot-swingup-v0": {
-            "lr": 3e-4,
+            "lr": 5e-5,
             "gamma": 0.99,
             "tau": 0.005,
             "alpha": 1.0,
             "min_samples": 10000,
             "target_entropy": None,
+            "normalize_obs": False,
+            "shape_reward": True,
         }
     },
     'TD3':{
@@ -114,7 +118,7 @@ configs = {
         
         "dm_control/cartpole-swingup-v0": {
             # Agent initialization parameters
-            "lr": 3e-4,
+            "lr": 5e-5,
             "gamma": 0.99,
             "tau": 0.005,
             "policy_noise": 0.2,
@@ -134,13 +138,16 @@ configs = {
         },
         
         "dm_control/acrobot-swingup-v0": {
-            "lr": 3e-4,
+            "lr": 1e-4,
             "gamma": 0.99,
             "tau": 0.005,
             "policy_noise": 0.2,
             "noise_clip": 0.5,
             "policy_freq": 2,
             "min_samples": 10000,
+            "batch_size": 1024,
+            "normalize_obs": False,
+            "shape_reward": True,
         }
     }
 }
@@ -170,9 +177,10 @@ def main():
     # Otherwise, render_mode=None makes the env step as fast as possible.
     render_mode = "human" if args.render else None
     
-    logger.info(f"Initializing {args.env} with {args.n_envs} environments, render_mode={render_mode}")
+    normalize_obs = configs.get(args.algo, {}).get(args.env, {}).get("normalize_obs", False)
+    shape_reward = configs.get(args.algo, {}).get(args.env, {}).get("shape_reward", False)
     from src.env import create_vector_env
-    env = create_vector_env(args.env, num_envs=args.n_envs, render_mode=render_mode)
+    env = create_vector_env(args.env, num_envs=args.n_envs, render_mode=render_mode, normalize_obs=normalize_obs, shape_reward=shape_reward)
     
     # Initialize Agent using single_observation_space/single_action_space
     if args.algo == "DQN":
