@@ -16,7 +16,7 @@ def parse_args():
 
 def plotAllEnvironments(algorithm_names):
     # 1. Configuration
-    environments = ['carRacing', 'cartPole', 'acroBot']
+    environments = ['carRacing', 'cartPole', 'acrobot']
     # Professional color palette for algorithms
     algo_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'] 
     

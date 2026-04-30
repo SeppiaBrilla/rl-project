@@ -1,7 +1,7 @@
 import numpy as np
 import gymnasium as gym
-from gymnasium.wrappers import FlattenObservation, ResizeObservation, GrayscaleObservation, FrameStackObservation, MaxAndSkipObservation
-from .wrappers import CarRacingActionWrapper
+from gymnasium.wrappers import FlattenObservation, ResizeObservation, GrayscaleObservation, FrameStackObservation, MaxAndSkipObservation, NormalizeObservation, TransformObservation
+from .wrappers import CarRacingActionWrapper, AcrobotRewardShapingWrapper
 
 class PyTorchImageWrapper(gym.ObservationWrapper):
     """
@@ -35,7 +35,7 @@ class PyTorchImageWrapper(gym.ObservationWrapper):
             obs = np.transpose(obs, (2, 0, 1)) # (C, H, W)
         return obs.astype(np.float32) / 255.0
 
-def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, **kwargs):
+def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, normalize_obs: bool = False, shape_reward: bool = False, **kwargs):
     """
     Factory function to create Gymnasium environments, including support for 
     DeepMind Control Suite (via Shimmy) and standard Gymnasium environments.
@@ -81,14 +81,21 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, *
         elif hasattr(env.observation_space, "shape") and len(env.observation_space.shape) > 1:
             env = FlattenObservation(env)
         
+        if normalize_obs:
+            env = NormalizeObservation(env)
+            env = TransformObservation(env, lambda obs: np.clip(obs, -10, 10), env.observation_space)
+
+    if shape_reward and "acrobot" in env_id.lower():
+        env = AcrobotRewardShapingWrapper(env)
+        
     return env
 
-def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, **kwargs):
+def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, normalize_obs: bool = False, shape_reward: bool = False, **kwargs):
     """
     Creates a vectorized environment.
     """
     def make_env():
-        return create_env(env_id, render_mode=render_mode, **kwargs)
+        return create_env(env_id, render_mode=render_mode, normalize_obs=normalize_obs, shape_reward=shape_reward, **kwargs)
     
     if num_envs > 1:
         # Use AsyncVectorEnv for true parallelism
