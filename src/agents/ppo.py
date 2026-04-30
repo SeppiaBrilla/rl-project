@@ -63,7 +63,7 @@ class Critic(nn.Module):
 
 class PPOAgent(BaseAgent):
     def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.999, gae_lambda=0.99,
-                 clip_ratio=0.2, epochs=10, K_epochs=100, batch_size=128, entropy_coef=0.001, max_grad_norm=0.5):
+                 clip_ratio=0.2, epochs=10, K_epochs=100, batch_size=128, entropy_coef=0.001, max_grad_norm=0.5, **kwargs):
         super().__init__(observation_space, action_space)
         self.gamma = gamma
         self.gae_lambda = gae_lambda

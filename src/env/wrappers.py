@@ -45,3 +45,34 @@ class CarRacingActionWrapper(gym.ActionWrapper):
             brake = -throttle_brake
             
         return np.array([steer, gas, brake], dtype=np.float32)
+
+class AcrobotRewardShapingWrapper(gym.Wrapper):
+    """
+    Reward shaping for Acrobot-swingup to encourage:
+    1. Swinging up (tip height)
+    2. Building momentum (angular velocity)
+    """
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        
+        try:
+            # Access underlying DMC physics
+            physics = self.env.unwrapped.physics
+            
+            # Height of the tip of the second link
+            # In DMC Acrobot, the vertical axis is Z
+            tip_pos = physics.named.data.xpos['tip']
+            tip_height = tip_pos[2] 
+            
+            # Angular velocity (sum of absolute velocities of the joints)
+            ang_vel = np.sum(np.abs(physics.data.qvel))
+            
+            # Apply shaping: 0.1 * height + 0.01 * velocity
+            # Height ranges roughly from -2 to 2, ang_vel can be large
+            reward += 0.1 * tip_height + 0.01 * ang_vel
+            
+        except Exception:
+            # Fallback if physics access fails
+            pass
+            
+        return obs, reward, terminated, truncated, info

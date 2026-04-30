@@ -8,10 +8,11 @@ A flexible and extensible Reinforcement Learning framework designed for training
 - **DMC Integration**: Automatic conversion of DMC's complex `Dict` observations into flat vectors for easier training.
 - **Advanced Algorithms**: Built-in support for state-of-the-art RL algorithms including PPO, SAC, and TD3.
 - **CNN Integration**: Optimized for vision-based tasks (e.g., `CarRacing-v3`) using NatureCNN and specialized observation wrappers.
-- **Efficient Preprocessing**: Automatic grayscaling, resizing (84x84), and frame stacking (4 frames) for image environments to boost training speed by up to 16x.
-- **Model Serialization**: easily save and load trained agents with a single flag.
-- **Customizable Agents**: Abstract base classes for easily implementing and swapping new RL algorithms.
-- **Flexible Buffers**: Adaptive `ReplayBuffer` for off-policy algorithms and `RolloutBuffer` for on-policy algorithms (e.g., PPO).
+- **Vectorized Training**: Support for parallel environment execution using `SyncVectorEnv` and `AsyncVectorEnv` for significantly faster data collection.
+- **Efficient Preprocessing**: Automatic grayscaling, resizing (84x84), and frame stacking (4 frames) for image environments to boost training speed by up to 16x, now fully compatible with batched vectorized observations.
+- **Model Serialization**: Easily save and load trained agents with a single flag.
+- **Customizable Agents**: Abstract base classes for easily implementing and swapping new RL algorithms, all supporting batched transitions.
+- **Flexible Buffers**: Adaptive `ReplayBuffer` and `RolloutBuffer` (with GAE support) optimized for vectorized environment transitions.
 
 ---
 
@@ -65,19 +66,19 @@ Train an agent using the `train.py` script.
 
 ### Examples
 
-**Standard Gymnasium (CartPole):**
+**Standard Gymnasium (CartPole) with 4 parallel environments:**
 ```bash
-python train.py --env CartPole-v1 --episodes 500
+python train.py --env CartPole-v1 --epochs 500 --n-envs 4
 ```
 
-**Gymnasium Box2D (CarRacing) with Model Saving:**
+**Gymnasium Box2D (CarRacing) with PPO and Model Saving:**
 ```bash
-python train.py --env CarRacing-v3 --episodes 100 --save-model car_racing_ppo.pt
+python train.py --env CarRacing-v3 --algo PPO --epochs 100 --save-model car_racing_ppo.pt --n-envs 8
 ```
 
-**DeepMind Control Suite (Cartpole Swingup):**
+**DeepMind Control Suite (Acrobot Swingup) with SAC:**
 ```bash
-python train.py --env dm_control/cartpole-swingup-v0 --episodes 200
+python train.py --env dm_control/acrobot-swingup-v0 --algo SAC --epochs 200 --results-file acrobot_sac.csv
 ```
 
 ### Evaluation & Visualization
@@ -94,19 +95,23 @@ python evaluate.py --env CarRacing-v3 --algo PPO --model-path car_racing_ppo.pt 
 python evaluate.py --env CartPole-v1 --algo PPO --model-path model.pt --episodes 10
 ```
 
-### CLI Arguments
+### `train.py` Arguments
+- `--env`: Environment ID (standard Gym ID or `dm_control/[domain]-[task]-v0`).
+- `--algo`: Algorithm to use. Choices: `DQN`, `SAC`, `TD3`, `PPO` (default: `DQN`).
+- `--epochs`: Number of training epochs (rollouts or update cycles).
+- `--n-envs`: Number of parallel environments to run (default: 1).
+- `--render`: Enable visual rendering (human mode). Note: rendering with many parallel envs can be slow.
+- `--seed`: Set random seed for reproducibility.
+- `--save-model`: Path to save the model weights (`.pt`).
+- `--results-file`: Path to save training progress CSV (default: `results.csv`).
+
+### `evaluate.py` Arguments
 - `--env`: Environment ID.
-- `--algo`: Algorithm type (`SAC`, `TD3`, `PPO`).
+- `--algo`: Algorithm type (`SAC`, `TD3`, `PPO`, `DQN`).
 - `--model-path`: Path to the `.pt` file containing trained weights.
 - `--episodes`: Number of evaluation episodes (default: 5).
 - `--seed`: Random seed.
 - `--no-render`: Disable visualization (run headless).
-- `--env`: Environment ID (standard Gym ID or `dm_control/[domain]-[task]-v0`).
-- `--algo`: Algorithm to use. Choices: `DQN`, `SAC`, `TD3`, `PPO` (default: `DQN`).
-- `--episodes`: Number of training episodes.
-- `--render`: Enable visual rendering (human mode).
-- `--seed`: Set random seed for reproducibility.
-- `--save-model`: Path to save the model weights and optimizer state upon completion (e.g., `model.pt`).
 
 ---
 
@@ -139,6 +144,7 @@ def create_env(env_id: str, ...):
 
 ## 🤖 LLM Implementation Notes
 When maintaining or extending this codebase:
-- Use `src/env/factory.py` for all environment creation to ensure consistent wrapping.
-- All agents **must** implement the `BaseAgent` interface.
-- Standard off-policy agents (DQN, SAC, TD3) use `ReplayBuffer`, while on-policy algorithms (PPO) use `RolloutBuffer` providing GAE advantages and returns. Ensure you maintain this distinction in `train.py`.
+- Use `src/env/factory.py` (`create_vector_env`) for environment creation to ensure consistent wrapping and vectorization.
+- All agents **must** implement the `BaseAgent` interface and handle **batched** observations and actions to support vectorized training.
+- Standard off-policy agents (DQN, SAC, TD3) use `ReplayBuffer`, while on-policy algorithms (PPO) use `RolloutBuffer` providing GAE advantages and returns. 
+- The training loop in `train.py` is epoch-based, where each epoch involves collecting data from `n-envs` and performing agent updates.

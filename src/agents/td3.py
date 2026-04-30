@@ -74,7 +74,7 @@ class Actor(nn.Module):
 
 class TD3Agent(BaseAgent):
     def __init__(self, observation_space, action_space, lr=3e-4, gamma=0.99, tau=0.005, batch_size:int=256,
-                 policy_noise=0.2, noise_clip=0.5, policy_freq=2, min_samples=1000):
+                 policy_noise=0.2, noise_clip=0.5, policy_freq=2, min_samples=1000, max_grad_norm=0.5, **kwargs):
         super().__init__(observation_space, action_space)
         self.gamma = gamma
         self.tau = tau
@@ -83,6 +83,7 @@ class TD3Agent(BaseAgent):
         self.policy_freq = policy_freq
         self.batch_size = batch_size
         self.min_samples = min_samples
+        self.max_grad_norm = max_grad_norm
         self.total_it = 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -113,7 +114,6 @@ class TD3Agent(BaseAgent):
             action = self.actor(state_ts).cpu().numpy()
             
         if not evaluate:
-            # Scale noise width to the range width for consistent exploration
             range_width = (self.action_high - self.action_low)
             noise = np.random.normal(0, 0.1 * range_width, size=action.shape)
             action = (action + noise).clip(self.action_low, self.action_high)
@@ -240,7 +240,7 @@ class TD3Agent(BaseAgent):
                         writer = csv.DictWriter(f, fieldnames=results[0].keys())
                         writer.writeheader()
                         writer.writerows(results)
-                logger.info(f"Epoch {epoch+1} | Eval Reward: {np.mean(eval_rewards):.2f} +/- {np.std(eval_rewards):.2f}")
+                logger.info(f"Epoch {epoch+1} | Eval Reward: {np.mean(eval_rewards):.2f} +/- {np.std(eval_rewards):.2f} loss: {avg_loss:.2f}")
             
         # Final save
         with open(results_file, 'w', newline='') as f:
