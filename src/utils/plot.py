@@ -3,6 +3,8 @@ import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 import glob
+from scipy.stats import mannwhitneyu
+import numpy as np
 
 
 
@@ -22,7 +24,10 @@ def plotAllEnvironments(algorithm_names):
     
     # 2. Initialize the Figure
     # We create 1 row and 3 columns. This happens ONCE.
-    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
+    fig, axes = plt.subplots(1, 3, figsize=(22, 8))
+    
+    # Store final rewards for statistical testing: {env: {algo: [rewards_per_seed]}}
+    final_rewards_data = {env: {} for env in environments}
     
     # 3. Data Processing and Plotting
     for algo_idx, algorithm in enumerate(algorithm_names):
@@ -66,6 +71,19 @@ def plotAllEnvironments(algorithm_names):
                     color=current_color, 
                     alpha=0.15
                 )
+
+                # Collect final rewards for each seed for Wilcoxon test
+                # We sort by seed (extracted from filename) to ensure pairing
+                seed_rewards = []
+                for f in sorted(all_files):
+                    df = pd.read_csv(f)
+                    if not df.empty:
+                        # Get the reward from the last epoch
+                        last_reward = df.iloc[-1]['eval_reward_mean']
+                        seed_rewards.append(last_reward)
+                
+                final_rewards_data[env][algorithm] = seed_rewards
+
             except Exception as e:
                 print(f"Error processing {algorithm} in {env}: {e}")
 
@@ -82,6 +100,32 @@ def plotAllEnvironments(algorithm_names):
         if handles:
             ax.legend(loc='lower right', fontsize=10)
 
+        # 4b. Wilcoxon Test Comparison (PPO vs Others)
+        if 'PPO' in final_rewards_data[env]:
+            ppo_rewards = final_rewards_data[env]['PPO']
+            comparison_text = "Mann-Whitney p-values (vs PPO):\n"
+            has_comparison = False
+            
+            for other_algo in ['SAC', 'TD3']:
+                if other_algo in final_rewards_data[env] and other_algo != 'PPO':
+                    other_rewards = final_rewards_data[env][other_algo]
+                    
+                    if len(ppo_rewards) > 0 and len(other_rewards) > 0:
+                        try:
+                            # Mann-Whitney U test (independent samples)
+                            _, p_val = mannwhitneyu(ppo_rewards, other_rewards)
+                            comparison_text += f"{other_algo}: p={p_val:.4f}\n"
+                            has_comparison = True
+                            print(f"[{env}] PPO vs {other_algo}: p-value = {p_val:.6f}")
+                        except Exception as test_err:
+                            comparison_text += f"{other_algo}: error\n"
+                            print(f"Error in Mann-Whitney test for {env}, {other_algo}: {test_err}")
+            
+            if has_comparison:
+                # Add text box with p-values to the plot
+                ax.text(0.05, 0.95, comparison_text.strip(), transform=ax.transAxes, 
+                        fontsize=9, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
     # Global Title
     plt.suptitle(f'Cross-Environment Learning Curves Comparison', fontsize=18, y=0.96)
     
@@ -91,9 +135,9 @@ def plotAllEnvironments(algorithm_names):
     # 5. Save and Show
     if not os.path.isdir("report/plots"):
         os.makedirs("report/plots")
-    output_filename = f'report/plots/algorithms_{'_'.join(algorithm_names)}_comparison.pdf'
+    output_filename = f'report/plots/algorithms_{"_".join(algorithm_names)}_comparison.pdf'
     plt.savefig(output_filename, bbox_inches='tight')
-    print(f"Success: Plot saved to report/plots/{output_filename}")
+    print(f"Success: Plot saved to {output_filename}")
     plt.show()
 
 if __name__ == "__main__":
