@@ -149,12 +149,28 @@ In its original formulation, GRPO is designed for discrete prediction settings w
 During the years, many environments which test the ability of the agents to solve control tasks have been developed. This made it necessary the development of unified toolkits with standardised api and common benchmarks to test the performance of the agents. Among those, two popular ones are OpenAi Gym \cite{brockman2016openai} and DeepMind Control Suite \cite{tassa2018deepmind}. 
 
 \section{Methodology}
-- Introduces the complete set of basic notation required to describe the key elements of the MDP of which
-the algorithm is built. (For the midway report) 
 
-- Presents the designed algorithm as a pseudocode ad descriobes each of its main components in natural language
+\subsection{Markov Decision Process Framework}
 
-- Motivates the necessity of each of these components for the solution of the target problem.
+We formalize the continuous and discrete control tasks addressed in this work as a discrete-time Markov Decision Process. The MDP provides the foundational mathematical framework for modeling the agent-environment interaction. It is formally defined by the tuple $\mathcal{M} = (\mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma)$, where the key components are detailed as follows:
+
+\begin{itemize}
+    \item $\mathcal{S}$ represents the state space. At each timestep $t$, the agent receives an observation $s_t \in \mathcal{S}$ describing the current configuration of the environment. In our selected tasks, this ranges from low-dimensional physical vectors (ex : joint angles and angular velocities for the Acrobot and CartPole environments) to high-dimensional pixel arrays (ex : for the Car Racing environment).
+
+    \item $\mathcal{A}$ denotes the action space. At state $s_t$, the agent selects an action $a_t \in \mathcal{A}$ sampled from its policy $\pi(a_t | s_t)$. Depending on the environment, $\mathcal{A}$ can be discrete or continuous.
+
+    \item $\mathcal{P}: \mathcal{S} \times \mathcal{A} \times \mathcal{S} \rightarrow [0, 1]$ is the state transition probability density function. It defines the dynamics of the environment, $p(s_{t+1} | s_t, a_t)$, representing the probability of transitioning to the next state $s_{t+1}$ given that action $a_t$ was taken in state $s_t$.
+
+    \item $\mathcal{R}: \mathcal{S} \times \mathcal{A} \rightarrow \mathbb{R}$ is the reward function. After executing action $a_t$ in state $s_t$, the agent receives a scalar reward $r_t = \mathcal{R}(s_t, a_t)$. The design of this function dictates the specific goal the agent must achieve (ex : staying on the track or balancing the pole).
+
+    \item $\gamma \in [0, 1)$ is the discount factor. It determines the present value of future rewards, effectively balancing the importance of immediate returns versus long-term success.
+\end{itemize}
+
+The central objective of a reinforcement learning agent is to discover an optimal policy $\pi^*$ that maximizes the expected cumulative discounted return $J(\pi)$ over an episode:
+\begin{equation}
+    J(\pi) = \mathbb{E}_{\tau \sim \pi} \left[ \sum_{t=0}^{T} \gamma^t r_t \right]
+\end{equation}
+where $\tau = (s_0, a_0, r_0, s_1, \dots)$ denotes a trajectory sampled by following policy $\pi$, and $T$ is the time horizon of the episode.
 
 \section{Theory}
 Presents the assumptipons, definitions and statements in purely mathematical terms, as well as their 
