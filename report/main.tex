@@ -94,8 +94,6 @@
 \maketitle
 
 \section{Introduction}
-1-1.5 pages that motivates the significance of the studied problem to the reinforcement learning community.
-and the main takeaway of the proposed solution.
 
 \section{Related work}
 
@@ -192,16 +190,8 @@ Furthermore, to quantify how much better an action is compared to the average ac
 This function is a core component of policy gradient updates, such as Generalized Advantage Estimation (GAE) used in PPO, and its relative estimation is central to the GRPO algorithm explored in this work.
 
 \section{Theory}
-Presents the assumptions, definitions and statements in purely mathematical terms, as well as their
-purposes and practical implication in natural language. The proof of the statements should be presented
-in an the appendix.
 
 \section{Experiments}
-Contains the learning curves for GRPO, PPO, SAC and TD3 for each of the three environments within a single
-figure with 3 subpanels where each model successfully solves the task and their relative performance can be
-justified by their properties and a verbal justification of why the results support the main hypotesis of
-the project. (Complete results for PPO, SAC and TD3 for the midway report)
-
 Figure \ref{fig:results} illustrates the training progression of PPO, SAC, and TD3 across three distinct control environments: CarRacing, CartPole, and Acrobot. All algorithms use the same neural network architecture, with 256 hidden nodes in both the first and second layer, and ReLU activation functions in the intermediate layers. To account for the image-based input in the CarRacing environment, a convolutional neural network (hyperparameters summarized in Table \ref{tab:cnn_hyperparams}) is used to extract features from the input and pass it to the base network which is shared with the other two environments. The same random seeds are used to train all models. Detailed hyperparameters for each algorithm across the three environments are summarized in Table \ref{tab:ppo_hyperparams}, Table \ref{tab:sac_hyperparams}, and Table \ref{tab:td3_hyperparams}.
 
 \begin{table}[!htb]
@@ -288,8 +278,6 @@ This universal failure can be attributed to several compounding factors inherent
 The consistently high variance across all algorithms and seeds suggests that the exploration challenge dominates: successful policies may emerge only through fortunate random initialization or exploration noise, rather than systematic learning. This indicates that standard model-free RL algorithms, regardless of being on-policy or off-policy, require either more sophisticated exploration mechanisms (e.g., curiosity-driven exploration, hindsight experience replay) or stronger inductive biases (e.g., demonstrations, curriculum learning) to solve highly underactuated control problems like Acrobot.
 
 \section{Conclusion}
-Presents the limitation of the work and presents ideas about how this project can be pursued further
-by the reader.
 
 \bibliographystyle{plain}
 \bibliography{references}
