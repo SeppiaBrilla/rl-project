@@ -61,7 +61,7 @@ class AcrobotRewardShapingWrapper(gym.Wrapper):
             
             # Height of the tip of the second link
             # In DMC Acrobot, the vertical axis is Z
-            tip_pos = physics.named.data.xpos['tip']
+            tip_pos = physics.named.data.site_xpos['tip']
             tip_height = tip_pos[2] 
             
             # Angular velocity (sum of absolute velocities of the joints)
@@ -134,10 +134,10 @@ class GoalConditionedWrapper(gym.Wrapper):
         shaping_reward = 0.0
         if achieved_goal.shape[-1] >= 6:
             # DMC orientations order: [sin1, sin12, cos1, cos12]
-            # Height = -cos1 - cos12 (where 0 is down, pi is up)
+            # In Acrobot-swingup, theta=0 (cos=1) is UP and theta=pi (cos=-1) is DOWN.
             cos1 = achieved_goal[..., 2]
             cos12 = achieved_goal[..., 3]
-            tip_height = -cos1 - cos12
+            tip_height = cos1 + cos12
             
             # Angular velocity magnitude
             v1 = achieved_goal[..., 4]
@@ -178,8 +178,8 @@ class AcrobotUprightStartWrapper(gym.Wrapper):
             # Access DMC physics through Shimmy wrapper
             physics = self.env.unwrapped.physics
             # Joint positions: [theta1, theta2]
-            # Upright is roughly [pi, 0]
-            qpos = np.array([np.pi, 0.0]) + np.random.uniform(-0.1, 0.1, size=2)
+            # In dm_control Acrobot, upright is roughly [0, 0]
+            qpos = np.zeros(2) + np.random.uniform(-0.1, 0.1, size=2)
             qvel = np.random.uniform(-0.05, 0.05, size=2)
             
             physics.data.qpos[:] = qpos
