@@ -105,10 +105,10 @@ class GoalConditionedWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        # Combine the base environment reward (e.g. shaping) with the goal-conditioned one.
-        # This allows the agent to see 'progress' even before hitting the sparse goal.
-        her_reward = self.compute_reward(obs, self.goal, info)
-        return self._convert_obs(obs), reward + her_reward, terminated, truncated, info
+        # We now calculate the combined reward (shaping + sparse) inside compute_reward
+        # to ensure consistency for HER relabeling.
+        combined_reward = self.compute_reward(obs, self.goal, info)
+        return self._convert_obs(obs), combined_reward, terminated, truncated, info
 
     def _convert_obs(self, obs):
         return {
@@ -119,18 +119,37 @@ class GoalConditionedWrapper(gym.Wrapper):
 
     def compute_reward(self, achieved_goal, desired_goal, info=None):
         # Distance-based sparse reward (standard for HER)
-        # Returns 0 if close to goal, -1 otherwise.
         achieved_goal = np.atleast_2d(achieved_goal)
         desired_goal = np.atleast_2d(desired_goal)
         
-        # For Acrobot/pendulum tasks, we often care more about the orientation (cos/sin)
-        # than the velocity for the 'success' condition.
-        # Here we use the first 4 elements (cos1, sin1, cos2, sin2)
+        # 1. Sparse Goal Component
         if achieved_goal.shape[-1] >= 4:
             dist = np.linalg.norm(achieved_goal[..., :4] - desired_goal[..., :4], axis=-1)
         else:
             dist = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
+        sparse_reward = -(dist > 0.3).astype(np.float32)
+        
+        # 2. Dense Shaping Component (Consistent for all goals)
+        # In Acrobot, achieved_goal is [cos1, sin1, cos2, sin2, v1, v2]
+        shaping_reward = 0.0
+        if achieved_goal.shape[-1] >= 6:
+            # Reconstruct tip height from cos/sin
+            # Height = -cos1 - cos(theta1+theta2)
+            cos1 = achieved_goal[..., 0]
+            sin1 = achieved_goal[..., 1]
+            cos2 = achieved_goal[..., 2]
+            sin2 = achieved_goal[..., 3]
             
-        # Relaxed threshold (0.3 is ~15-20 degrees error)
-        reward = -(dist > 0.3).astype(np.float32)
+            # cos(a+b) = cos(a)cos(b) - sin(a)sin(b)
+            cos12 = cos1 * cos2 - sin1 * sin2
+            tip_height = -cos1 - cos12
+            
+            # Angular velocity magnitude
+            v1 = achieved_goal[..., 4]
+            v2 = achieved_goal[..., 5]
+            ang_vel = np.abs(v1) + np.abs(v2)
+            
+            shaping_reward = 0.5 * tip_height + 0.1 * np.clip(ang_vel, 0, 10)
+            
+        reward = sparse_reward + shaping_reward
         return reward[0] if reward.shape[0] == 1 else reward

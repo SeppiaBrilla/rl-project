@@ -143,6 +143,12 @@ class TD3Agent(BaseAgent):
             range_width = (self.action_high - self.action_low)
             noise = np.random.normal(0, 0.1 * range_width, size=action.shape)
             action = (action + noise).clip(self.action_low, self.action_high)
+        else:
+            # Add a tiny bit of noise even in evaluation to help Acrobot 
+            # recover from near-stalls if the policy is still jittery.
+            range_width = (self.action_high - self.action_low)
+            noise = np.random.normal(0, 0.01 * range_width, size=action.shape)
+            action = (action + noise).clip(self.action_low, self.action_high)
             
         if not isinstance(state, torch.Tensor) and len(state.shape) == len(self.network_obs_space.shape):
             return action[0]
@@ -168,6 +174,7 @@ class TD3Agent(BaseAgent):
 
         self.critic_optim.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
         self.critic_optim.step()
 
         actor_loss_val = 0.0
@@ -175,6 +182,7 @@ class TD3Agent(BaseAgent):
             actor_loss = -self.critic.q1_forward(states, self.actor(states)).mean()
             self.actor_optim.zero_grad()
             actor_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
             self.actor_optim.step()
             actor_loss_val = actor_loss.item()
 
