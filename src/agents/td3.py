@@ -126,11 +126,7 @@ class TD3Agent(BaseAgent):
         if self.use_her and isinstance(state, dict):
             obs = state["observation"]
             goal = state["desired_goal"]
-            if len(obs.shape) == len(self.observation_space["observation"].shape):
-                state = np.concatenate([obs, goal], axis=-1)
-            else:
-                # Batch of observations
-                state = np.concatenate([obs, goal], axis=-1)
+            state = np.concatenate([obs, goal], axis=-1)
 
         if not isinstance(state, torch.Tensor):
             if len(state.shape) == len(self.network_obs_space.shape):
@@ -206,9 +202,33 @@ class TD3Agent(BaseAgent):
                 )
             obs_shape = self.observation_space["observation"].shape
             goal_shape = self.observation_space["desired_goal"].shape
+            # Try to get compute_reward from the environment stack
+            compute_reward_fn = None
+            
+            def find_handler(e):
+                if hasattr(e, "compute_reward"):
+                    return e.compute_reward
+                if hasattr(e, "env"):
+                    return find_handler(e.env)
+                return None
+
+            if hasattr(env, "envs"):
+                # SyncVectorEnv case
+                compute_reward_fn = find_handler(env.envs[0])
+            elif hasattr(env, "env_id"):
+                # Use the stored env_id to create a reference environment
+                try:
+                    from src.env import create_env
+                    temp_env = create_env(env.env_id, use_her=True)
+                    compute_reward_fn = find_handler(temp_env)
+                except Exception:
+                    compute_reward_fn = find_handler(env)
+            else:
+                compute_reward_fn = find_handler(env)
+
             buffer = HERReplayBuffer(capacity=100_000, state_shape=obs_shape, 
                                     action_shape=self.action_space.shape, goal_shape=goal_shape,
-                                    compute_reward_fn=env.unwrapped.compute_reward if hasattr(env.unwrapped, "compute_reward") else None,
+                                    compute_reward_fn=compute_reward_fn,
                                     device=self.device, her_ratio=self.her_ratio)
         else:
             buffer = ReplayBuffer(capacity=100_000, state_shape=self.observation_space.shape, 
@@ -234,16 +254,24 @@ class TD3Agent(BaseAgent):
                 next_state, rewards, dones, truncateds, infos = env.step(action)
                 masks = np.logical_or(dones, truncateds)
                 
-                real_next_state = next_state.copy()
+                if self.use_her:
+                    real_next_state = {k: v.copy() for k, v in next_state.items()}
+                else:
+                    real_next_state = next_state.copy()
+
                 if isinstance(infos, dict) and "final_observation" in infos:
                     has_final = infos.get("_final_observation", masks)
                     for i in range(n_envs):
                         if has_final[i] and infos["final_observation"][i] is not None:
-                            real_next_state[i] = infos["final_observation"][i]
+                            if self.use_her:
+                                for key in real_next_state.keys():
+                                    real_next_state[key][i] = infos["final_observation"][i][key]
+                            else:
+                                real_next_state[i] = infos["final_observation"][i]
                             
                 # Add to buffer
                 if self.use_her:
-                    buffer.add_batch(state["observation"], action, rewards, real_next_state["observation"], dones,
+                    buffer.add_batch(state["observation"], action, rewards, real_next_state["observation"], dones, truncateds,
                                    state["achieved_goal"], real_next_state["achieved_goal"], state["desired_goal"])
                 else:
                     buffer.add_batch(state, action, rewards, real_next_state, dones)

@@ -102,7 +102,7 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
             env = NormalizeObservation(env)
             env = TransformObservation(env, lambda obs: np.clip(obs, -10, 10), env.observation_space)
 
-    if shape_reward and "acrobot" in env_id.lower():
+    if shape_reward and "acrobot" in env_id.lower() and not use_her:
         env = AcrobotRewardShapingWrapper(env)
         
     return env
@@ -122,5 +122,8 @@ def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, n
     else:
         # Use SyncVectorEnv for consistency even with 1 env
         env = gym.vector.SyncVectorEnv([make_env])
+    
+    # Store the env_id for easier discovery by agents (e.g. for HER reward function)
+    env.env_id = env_id
         
     return env

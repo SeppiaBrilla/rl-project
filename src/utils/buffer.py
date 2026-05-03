@@ -87,11 +87,14 @@ class HERReplayBuffer(ReplayBuffer):
         self.next_achieved_goals = np.zeros((capacity, *goal_shape), dtype=np.float32)
         self.desired_goals = np.zeros((capacity, *goal_shape), dtype=np.float32)
         
-        # Track episode boundaries for 'future' sampling
-        self.episode_indices = [] # List of (start_idx, end_idx)
+        # Track episodes efficiently
+        self.episode_id = np.full(capacity, -1, dtype=np.int64)
+        self.step_indices = np.zeros(capacity, dtype=np.int32)
+        self.episode_indices = {} # ep_id -> np.array of buffer indices
         self.current_episodes = {} # env_idx -> list of buffer indices in current episode
+        self.next_episode_id = 0
 
-    def add_batch(self, states, actions, rewards, next_states, dones, 
+    def add_batch(self, states, actions, rewards, next_states, terminateds, truncateds, 
                   achieved_goals, next_achieved_goals, desired_goals, env_indices=None):
         n = len(states)
         if env_indices is None:
@@ -99,11 +102,17 @@ class HERReplayBuffer(ReplayBuffer):
             
         for i in range(n):
             idx = self.pos
+            
+            # Invalidate old episode if we are overwriting
+            old_ep_id = self.episode_id[idx]
+            if old_ep_id != -1 and old_ep_id in self.episode_indices:
+                del self.episode_indices[old_ep_id]
+
             self.states[idx] = states[i]
             self.actions[idx] = actions[i]
             self.rewards[idx] = rewards[i]
             self.next_states[idx] = next_states[i]
-            self.dones[idx] = dones[i]
+            self.dones[idx] = terminateds[i] # Store only terminations for correct bootstrapping
             self.achieved_goals[idx] = achieved_goals[i]
             self.next_achieved_goals[idx] = next_achieved_goals[i]
             self.desired_goals[idx] = desired_goals[i]
@@ -111,20 +120,23 @@ class HERReplayBuffer(ReplayBuffer):
             env_idx = env_indices[i]
             if env_idx not in self.current_episodes:
                 self.current_episodes[env_idx] = []
+            
+            # Store step index within episode for O(1) lookup during sampling
+            self.step_indices[idx] = len(self.current_episodes[env_idx])
             self.current_episodes[env_idx].append(idx)
             
-            if dones[i]:
-                # Episode finished, record boundaries
-                ep_indices = self.current_episodes[env_idx]
-                self.episode_indices.append(np.array(ep_indices))
-                self.current_episodes[env_idx] = []
+            # Episode finished if either terminated or truncated
+            if terminateds[i] or truncateds[i]:
+                # Episode finished (either termination or truncation)
+                # Episode finished, record boundaries with a unique ID
+                ep_id = self.next_episode_id
+                self.next_episode_id += 1
                 
-                # Cleanup old episodes that might have been overwritten
-                # (Simple heuristic: if the first index of an episode is overwritten, 
-                # the episode is invalid for HER future sampling)
-                # In practice, we just keep a list and periodically filter or use a better structure.
-                if len(self.episode_indices) > 1000: # Keep memory in check
-                    self.episode_indices = self.episode_indices[-1000:]
+                ep_indices = np.array(self.current_episodes[env_idx])
+                self.episode_indices[ep_id] = ep_indices
+                self.episode_id[ep_indices] = ep_id
+                
+                self.current_episodes[env_idx] = []
 
             self.pos = (self.pos + 1) % self.capacity
             self.size = min(self.size + 1, self.capacity)
@@ -139,37 +151,47 @@ class HERReplayBuffer(ReplayBuffer):
         res_dones = self.dones[indices].copy()
         res_desired_goals = self.desired_goals[indices].copy()
         
-        # HER relabeling
+        # HER relabeling (Vectorized)
         her_indices = np.where(np.random.uniform(0, 1, batch_size) < self.her_ratio)[0]
-        for idx_in_batch in her_indices:
+        
+        # Pre-filter indices that belong to finished/valid episodes
+        valid_her_mask = np.zeros(len(her_indices), dtype=bool)
+        for i, idx_in_batch in enumerate(her_indices):
             buffer_idx = indices[idx_in_batch]
+            ep_id = self.episode_id[buffer_idx]
+            if ep_id != -1 and ep_id in self.episode_indices:
+                valid_her_mask[i] = True
+        
+        her_indices = her_indices[valid_her_mask]
+        
+        if len(her_indices) > 0:
+            her_buffer_indices = indices[her_indices]
+            ep_ids = self.episode_id[her_buffer_indices]
             
-            # Find which episode this buffer_idx belongs to
-            # This search can be slow, but for a prototype it's okay.
-            # Optimized version would store ep_id for each buffer index.
-            target_ep = None
-            for ep in reversed(self.episode_indices):
-                if buffer_idx in ep:
-                    target_ep = ep
-                    break
-            
-            if target_ep is not None:
-                # Find current step in episode
-                step_idx = np.where(target_ep == buffer_idx)[0][0]
-                # Pick a future step (including current one is sometimes allowed, but future is better)
+            # Select future steps for each HER transition
+            future_buffer_indices = []
+            for i, buffer_idx in enumerate(her_buffer_indices):
+                ep_id = ep_ids[i]
+                target_ep = self.episode_indices[ep_id]
+                step_idx = self.step_indices[buffer_idx]
+                
+                # Pick a future step (including current)
                 future_step_idx = np.random.randint(step_idx, len(target_ep))
-                future_buffer_idx = target_ep[future_step_idx]
-                
-                # Relabel goal
-                new_goal = self.next_achieved_goals[future_buffer_idx]
-                res_desired_goals[idx_in_batch] = new_goal
-                
-                # Recompute reward and done
-                res_rewards[idx_in_batch] = self.compute_reward_fn(self.next_achieved_goals[buffer_idx], new_goal, None)
-                # For HER, done is typically only true if the goal is reached, 
-                # but most implementations just recompute reward and leave done as original 
-                # or recompute it too if the env provides it.
-                # Here we assume standard GoalEnv behavior.
+                future_buffer_indices.append(target_ep[future_step_idx])
+            
+            future_buffer_indices = np.array(future_buffer_indices)
+            
+            # Relabel goals
+            new_goals = self.next_achieved_goals[future_buffer_indices]
+            res_desired_goals[her_indices] = new_goals
+            
+            # Recompute rewards for all HER transitions at once
+            new_rewards = self.compute_reward_fn(self.next_achieved_goals[her_buffer_indices], new_goals, None)
+            res_rewards[her_indices] = new_rewards
+            
+            # Fix done signal: for relabeled transitions, terminal iff goal reached
+            # (In sparse reward 0.0 is success, -1.0 is failure)
+            res_dones[her_indices] = (new_rewards == 0).astype(np.float32)
 
         # Concatenate state and goal for the agent
         combined_states = np.concatenate([res_states, res_desired_goals], axis=-1)

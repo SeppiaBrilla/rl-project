@@ -119,6 +119,8 @@ class GoalConditionedWrapper(gym.Wrapper):
     def compute_reward(self, achieved_goal, desired_goal, info=None):
         # Distance-based sparse reward (standard for HER)
         # Returns 0 if close to goal, -1 otherwise.
-        dist = np.linalg.norm(np.atleast_2d(achieved_goal) - np.atleast_2d(desired_goal), axis=-1)
+        achieved_goal = np.atleast_2d(achieved_goal)
+        desired_goal = np.atleast_2d(desired_goal)
+        dist = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
         reward = -(dist > 0.1).astype(np.float32)
-        return reward[0] if np.isscalar(dist) or dist.shape == (1,) else reward
+        return reward[0] if reward.shape[0] == 1 else reward
