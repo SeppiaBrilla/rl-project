@@ -133,15 +133,10 @@ class GoalConditionedWrapper(gym.Wrapper):
         # In Acrobot, achieved_goal is [cos1, sin1, cos2, sin2, v1, v2]
         shaping_reward = 0.0
         if achieved_goal.shape[-1] >= 6:
-            # Reconstruct tip height from cos/sin
-            # Height = -cos1 - cos(theta1+theta2)
-            cos1 = achieved_goal[..., 0]
-            sin1 = achieved_goal[..., 1]
-            cos2 = achieved_goal[..., 2]
-            sin2 = achieved_goal[..., 3]
-            
-            # cos(a+b) = cos(a)cos(b) - sin(a)sin(b)
-            cos12 = cos1 * cos2 - sin1 * sin2
+            # DMC orientations order: [sin1, sin12, cos1, cos12]
+            # Height = -cos1 - cos12 (where 0 is down, pi is up)
+            cos1 = achieved_goal[..., 2]
+            cos12 = achieved_goal[..., 3]
             tip_height = -cos1 - cos12
             
             # Angular velocity magnitude
@@ -191,10 +186,13 @@ class AcrobotUprightStartWrapper(gym.Wrapper):
             physics.data.qvel[:] = qvel
             
             # Reconstruct the native DMC observation dictionary for Acrobot
+            # Order: [sin(theta1), sin(theta1+theta2), cos(theta1), cos(theta1+theta2)]
+            theta1 = qpos[0]
+            theta12 = qpos[0] + qpos[1]
             obs = {
                 "orientations": np.array([
-                    np.cos(qpos[0]), np.sin(qpos[0]),
-                    np.cos(qpos[1]), np.sin(qpos[1])
+                    np.sin(theta1), np.sin(theta12),
+                    np.cos(theta1), np.cos(theta12)
                 ], dtype=np.float32),
                 "velocity": qvel.astype(np.float32)
             }

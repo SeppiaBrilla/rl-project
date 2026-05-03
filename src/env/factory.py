@@ -82,8 +82,8 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
         env = GoalConditionedWrapper(env)
         # Specific goal for Acrobot swingup (upright position)
         if "acrobot" in env_id.lower():
-            # Target upright: cos(theta1)=1, sin(theta1)=0, cos(theta2)=1, sin(theta2)=0, dots=0
-            env.goal = np.array([1.0, 0.0, 1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+            # Target upright: sin1=0, sin12=0, cos1=-1, cos12=-1, dots=0
+            env.goal = np.array([0.0, 0.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32)
         flatten_obs = False 
     
     # Handle remaining non-HER flattening/image logic
