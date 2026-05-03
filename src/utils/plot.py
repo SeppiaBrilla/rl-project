@@ -51,23 +51,21 @@ def plotAllEnvironments(algorithm_names):
                 combined = pd.concat(dataframes)
                 
                 # Group by epoch to get the mean and standard deviation across seeds
-                stats = combined.groupby('epoch').agg({
-                    'eval_reward_mean': 'mean',
-                    'eval_reward_std': 'mean'  
-                }).reset_index()
+                stats = combined.groupby('epoch')['eval_reward_mean'].agg(['mean', 'std']).reset_index()
                 ax.plot(
                     stats['epoch'], 
-                    stats['eval_reward_mean'], 
+                    stats['mean'], 
                     color=current_color, 
                     lw=2, 
                     label=f'{algorithm}'
                 )
                 
                 # Plot the Standard Deviation Shading
+                std_reward = stats['std'].fillna(0)
                 ax.fill_between(
                     stats['epoch'], 
-                    stats['eval_reward_mean'] - stats['eval_reward_std'], 
-                    stats['eval_reward_mean'] + stats['eval_reward_std'], 
+                    stats['mean'] - std_reward, 
+                    stats['mean'] + std_reward, 
                     color=current_color, 
                     alpha=0.15
                 )
