@@ -69,10 +69,56 @@ class AcrobotRewardShapingWrapper(gym.Wrapper):
             
             # Apply shaping: 0.1 * height + 0.01 * velocity
             # Height ranges roughly from -2 to 2, ang_vel can be large
-            reward += 0.1 * tip_height + 0.01 * ang_vel
+            reward += 1.1 * tip_height + 1.001 * ang_vel
             
         except Exception:
             # Fallback if physics access fails
             pass
             
         return obs, reward, terminated, truncated, info
+
+class GoalConditionedWrapper(gym.Wrapper):
+    """
+    Wraps a standard Box environment into a Goal-Conditioned environment.
+    By default, it treats the entire observation as both the state and the goal.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        obs_space = env.observation_space
+        if not isinstance(obs_space, gym.spaces.Box):
+            raise ValueError(f"GoalConditionedWrapper only supports Box observation spaces, got {type(obs_space)}")
+            
+        self.observation_space = gym.spaces.Dict({
+            "observation": obs_space,
+            "achieved_goal": obs_space,
+            "desired_goal": obs_space
+        })
+        # For Acrobot-swingup, a common 'goal' state is roughly [1, 0, 1, 0, 0, 0] 
+        # (upright position with zero velocity).
+        # We initialize it to zeros but it can be set externally.
+        self.goal = np.zeros(obs_space.shape, dtype=np.float32)
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return self._convert_obs(obs), info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        # We override the environment's internal reward with the goal-conditioned one
+        # if we want HER to truly drive the behavior.
+        new_reward = self.compute_reward(obs, self.goal, info)
+        return self._convert_obs(obs), new_reward, terminated, truncated, info
+
+    def _convert_obs(self, obs):
+        return {
+            "observation": obs.astype(np.float32),
+            "achieved_goal": obs.astype(np.float32),
+            "desired_goal": self.goal.astype(np.float32)
+        }
+
+    def compute_reward(self, achieved_goal, desired_goal, info=None):
+        # Distance-based sparse reward (standard for HER)
+        # Returns 0 if close to goal, -1 otherwise.
+        dist = np.linalg.norm(np.atleast_2d(achieved_goal) - np.atleast_2d(desired_goal), axis=-1)
+        reward = -(dist > 0.1).astype(np.float32)
+        return reward[0] if np.isscalar(dist) or dist.shape == (1,) else reward

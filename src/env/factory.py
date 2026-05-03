@@ -35,7 +35,8 @@ class PyTorchImageWrapper(gym.ObservationWrapper):
             obs = np.transpose(obs, (2, 0, 1)) # (C, H, W)
         return obs.astype(np.float32) / 255.0
 
-def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, normalize_obs: bool = False, shape_reward: bool = False, **kwargs):
+def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, normalize_obs: bool = False, 
+               shape_reward: bool = False, use_her: bool = False, **kwargs):
     """
     Factory function to create Gymnasium environments, including support for 
     DeepMind Control Suite (via Shimmy) and standard Gymnasium environments.
@@ -45,6 +46,7 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
                 'dm_control/cartpole-swingup-v0')
         render_mode: Rendering mode ('human', 'rgb_array', etc.)
         flatten_obs: Whether to flatten dict/tuple observations (default True)
+        use_her: Whether to wrap the env for Hindsight Experience Replay (default False)
         **kwargs: Additional arguments passed to gym.make
         
     Returns:
@@ -61,6 +63,21 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
             
     # Create the environment
     env = gym.make(env_id, render_mode=render_mode, **kwargs)
+    
+    # Apply HER wrapper before flattening if requested
+    if use_her:
+        # If it's a dictionary observation but NOT a GoalEnv, flatten it first
+        if isinstance(env.observation_space, gym.spaces.Dict) and "observation" not in env.observation_space:
+            env = gym.wrappers.FlattenObservation(env)
+            
+        from .wrappers import GoalConditionedWrapper
+        env = GoalConditionedWrapper(env)
+        # Specific goal for Acrobot swingup (upright position)
+        if "acrobot" in env_id.lower():
+            # Target upright: cos(theta1)=1, sin(theta1)=0, cos(theta2)=1, sin(theta2)=0, dots=0
+            # Total 6 elements after flattening (4 orientations + 2 velocities)
+            env.goal = np.array([1.0, 0.0, 1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        flatten_obs = False # Cannot flatten if we want HER Dict space
     
     obs_space = env.observation_space
     is_image = hasattr(obs_space, "shape") and obs_space.shape is not None and len(obs_space.shape) == 3
@@ -90,12 +107,14 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
         
     return env
 
-def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, normalize_obs: bool = False, shape_reward: bool = False, **kwargs):
+def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, normalize_obs: bool = False, 
+                      shape_reward: bool = False, use_her: bool = False, **kwargs):
     """
     Creates a vectorized environment.
     """
     def make_env():
-        return create_env(env_id, render_mode=render_mode, normalize_obs=normalize_obs, shape_reward=shape_reward, **kwargs)
+        return create_env(env_id, render_mode=render_mode, normalize_obs=normalize_obs, 
+                          shape_reward=shape_reward, use_her=use_her, **kwargs)
     
     if num_envs > 1:
         # Use AsyncVectorEnv for true parallelism

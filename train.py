@@ -141,6 +141,7 @@ configs = {
             "lr": 1e-4,
             "gamma": 0.99,
             "tau": 0.005,
+            "use_her": True,
             "policy_noise": 0.2,
             "noise_clip": 0.5,
             "policy_freq": 2,
@@ -179,8 +180,11 @@ def main():
     
     normalize_obs = configs.get(args.algo, {}).get(args.env, {}).get("normalize_obs", False)
     shape_reward = configs.get(args.algo, {}).get(args.env, {}).get("shape_reward", False)
+    use_her = configs.get(args.algo, {}).get(args.env, {}).get("use_her", False)
+    
     from src.env import create_vector_env
-    env = create_vector_env(args.env, num_envs=args.n_envs, render_mode=render_mode, normalize_obs=normalize_obs, shape_reward=shape_reward)
+    env = create_vector_env(args.env, num_envs=args.n_envs, render_mode=render_mode, 
+                            normalize_obs=normalize_obs, shape_reward=shape_reward, use_her=use_her)
     
     # Initialize Agent using single_observation_space/single_action_space
     if args.algo == "DQN":
