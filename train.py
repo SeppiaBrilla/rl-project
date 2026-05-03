@@ -147,7 +147,7 @@ configs = {
             "policy_freq": 2,
             "min_samples": 10000,
             "batch_size": 1024,
-            "normalize_obs": False,
+            "normalize_obs": True,
             "shape_reward": True,
         }
     }
@@ -158,12 +158,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description="RL Framework Training Script")
     parser.add_argument("--env", type=str, default="CartPole-v1", help="Gymnasium environment ID")
     parser.add_argument("--algo", type=str, default="DQN", choices=["DQN", "SAC", "TD3", "PPO"], help="Algorithm to train")
-    parser.add_argument("--epochs", type=int, default=500, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
     parser.add_argument("--render", action="store_true", help="Enable rendering for debugging/visualization")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--save-model", type=str, default=None, help="Path to save the model upon completion")
     parser.add_argument("--results-file", type=str, default="results.csv", help="Path to save the training results (csv)")
     parser.add_argument("--n-envs", type=int, default=1, help="Number of parallel environments")
+    parser.add_argument("--upright-start", action="store_true", help="Initialize Acrobot near upright (debug)")
     return parser.parse_args()
 
 def main():
@@ -184,7 +185,8 @@ def main():
     
     from src.env import create_vector_env
     env = create_vector_env(args.env, num_envs=args.n_envs, render_mode=render_mode, 
-                            normalize_obs=normalize_obs, shape_reward=shape_reward, use_her=use_her)
+                            normalize_obs=normalize_obs, shape_reward=shape_reward, use_her=use_her,
+                            upright_start=args.upright_start)
     
     # Initialize Agent using single_observation_space/single_action_space
     if args.algo == "DQN":
