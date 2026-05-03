@@ -7,7 +7,7 @@
 % The authors should use one of these tracks.
 % Before accepting by the NeurIPS conference, select one of the options below.
 % 0. "default" for submission
-\usepackage[main, final]{neurips_2026}
+\usepackage[main, preprint]{neurips_2026}
 \usepackage{pdfpages}
 % the "default" option is equal to the "main" option, which is used for the Main Track with double-blind reviewing.
 % 1. "main" option is used for the Main Track
@@ -273,12 +273,14 @@ Figure \ref{fig:results} illustrates the training progression of PPO, SAC, and T
   r' = r + 0.1 \cdot tip\_height + 0.01 \cdot ang\_vel
 \end{equation}
 
-This universal failure can be attributed to several compounding factors inherent to the Acrobot task. First, the environment is severely underactuated: the agent controls only the elbow joint torque while needing to coordinate two links to swing up. This requires discovering a precise "energy pumping" strategy through complex multi-step action sequences. Second, the chaotic nature of double-pendulum dynamics means that small variations in actions lead to vastly different and unpredictable trajectories, making both value function approximation and policy gradient estimation extremely noisy and high-variance. Third, despite reward shaping, the learning signal remains sparse—random exploration almost never produces upward swings, providing minimal gradients for learning. Finally, successful swing-ups require long sequences of coordinated actions, creating a severe credit assignment problem where the impact of early actions is exponentially discounted by factor $\gamma^t$, making it difficult for temporal difference methods to propagate value information backward effectively.
+This universal failure can be attributed to several compounding factors inherent to the Acrobot task. First, the environment is severely underactuated: the agent controls only the elbow joint torque while needing to coordinate two links to swing up. This requires discovering a precise "energy pumping" strategy through complex multi-step action sequences. Second, the chaotic nature of double-pendulum dynamics means that small variations in actions lead to vastly different and unpredictable trajectories, making both value function approximation and policy gradient estimation extremely noisy and high-variance. Third, despite reward shaping, the learning signal remains sparse: random exploration almost never produces upward swings, providing minimal gradients for learning. Finally, successful swing-ups require long sequences of coordinated actions, creating a severe credit assignment problem where the impact of early actions is discounted by factor $\gamma^t$, making it difficult for temporal difference methods to propagate value information backward effectively.
 
 The consistently high variance across all algorithms and seeds suggests that the exploration challenge dominates: successful policies may emerge only through fortunate random initialization or exploration noise, rather than systematic learning. This indicates that standard model-free RL algorithms, regardless of being on-policy or off-policy, require either more sophisticated exploration mechanisms (e.g., curiosity-driven exploration, hindsight experience replay) or stronger inductive biases (e.g., demonstrations, curriculum learning) to solve highly underactuated control problems like Acrobot.
 
 \section{Conclusion}
 
+\paragraph{AI Usage Disclosure}
+Gemini 3.0 was used to generate the figures and tables presented in this report as well as assisting in writing the code for the experiments. All generated code, text and figures was reviewed, edited and corrected by the author who takes full responsibility for the content of this report.
 \bibliographystyle{plain}
 \bibliography{references}
 \end{document}
