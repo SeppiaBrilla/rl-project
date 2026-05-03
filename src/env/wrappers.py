@@ -67,9 +67,10 @@ class AcrobotRewardShapingWrapper(gym.Wrapper):
             # Angular velocity (sum of absolute velocities of the joints)
             ang_vel = np.sum(np.abs(physics.data.qvel))
             
-            # Apply shaping: 0.1 * height + 0.01 * velocity
-            # Height ranges roughly from -2 to 2, ang_vel can be large
-            reward += 1.1 * tip_height + 1.001 * ang_vel
+            # Apply shaping: height + damped angular velocity
+            # Height ranges roughly from -2 to 2.
+            # We cap the ang_vel contribution to prevent it from dominating.
+            reward += 0.5 * tip_height + 0.1 * np.clip(ang_vel, 0, 10)
             
         except Exception:
             # Fallback if physics access fails
@@ -104,10 +105,10 @@ class GoalConditionedWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        # We override the environment's internal reward with the goal-conditioned one
-        # if we want HER to truly drive the behavior.
-        new_reward = self.compute_reward(obs, self.goal, info)
-        return self._convert_obs(obs), new_reward, terminated, truncated, info
+        # Combine the base environment reward (e.g. shaping) with the goal-conditioned one.
+        # This allows the agent to see 'progress' even before hitting the sparse goal.
+        her_reward = self.compute_reward(obs, self.goal, info)
+        return self._convert_obs(obs), reward + her_reward, terminated, truncated, info
 
     def _convert_obs(self, obs):
         return {
@@ -121,6 +122,15 @@ class GoalConditionedWrapper(gym.Wrapper):
         # Returns 0 if close to goal, -1 otherwise.
         achieved_goal = np.atleast_2d(achieved_goal)
         desired_goal = np.atleast_2d(desired_goal)
-        dist = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
-        reward = -(dist > 0.1).astype(np.float32)
+        
+        # For Acrobot/pendulum tasks, we often care more about the orientation (cos/sin)
+        # than the velocity for the 'success' condition.
+        # Here we use the first 4 elements (cos1, sin1, cos2, sin2)
+        if achieved_goal.shape[-1] >= 4:
+            dist = np.linalg.norm(achieved_goal[..., :4] - desired_goal[..., :4], axis=-1)
+        else:
+            dist = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
+            
+        # Relaxed threshold (0.3 is ~15-20 degrees error)
+        reward = -(dist > 0.3).astype(np.float32)
         return reward[0] if reward.shape[0] == 1 else reward

@@ -64,24 +64,37 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
     # Create the environment
     env = gym.make(env_id, render_mode=render_mode, **kwargs)
     
-    # Apply HER wrapper before flattening if requested
+    obs_space = env.observation_space
+    is_image = hasattr(obs_space, "shape") and obs_space.shape is not None and len(obs_space.shape) == 3
+
+    # Apply normalization and shaping to the base environment
+    if normalize_obs and not is_image:
+        if isinstance(env.observation_space, gym.spaces.Dict):
+            env = FlattenObservation(env)
+        
+        env = NormalizeObservation(env)
+        env = TransformObservation(env, lambda obs: np.clip(obs, -10, 10), env.observation_space)
+        flatten_obs = False 
+
+    if shape_reward and "acrobot" in env_id.lower():
+        # Allow shaping even with HER, but HER will still use the sparse reward for relabeling
+        env = AcrobotRewardShapingWrapper(env)
+
+    # Apply HER wrapper if requested
     if use_her:
-        # If it's a dictionary observation but NOT a GoalEnv, flatten it first
+        # Ensure it's flattened if it's a DMC dict
         if isinstance(env.observation_space, gym.spaces.Dict) and "observation" not in env.observation_space:
-            env = gym.wrappers.FlattenObservation(env)
+            env = FlattenObservation(env)
             
         from .wrappers import GoalConditionedWrapper
         env = GoalConditionedWrapper(env)
         # Specific goal for Acrobot swingup (upright position)
         if "acrobot" in env_id.lower():
             # Target upright: cos(theta1)=1, sin(theta1)=0, cos(theta2)=1, sin(theta2)=0, dots=0
-            # Total 6 elements after flattening (4 orientations + 2 velocities)
             env.goal = np.array([1.0, 0.0, 1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-        flatten_obs = False # Cannot flatten if we want HER Dict space
+        flatten_obs = False 
     
-    obs_space = env.observation_space
-    is_image = hasattr(obs_space, "shape") and obs_space.shape is not None and len(obs_space.shape) == 3
-    
+    # Handle remaining non-HER flattening/image logic
     if is_image:
         env = MaxAndSkipObservation(env, 4)
         env = ResizeObservation(env, (84, 84))
@@ -89,7 +102,6 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
         env = FrameStackObservation(env, 4)
         env = PyTorchImageWrapper(env)
         
-        # Apply simplified actions for CarRacing by default
         if "CarRacing" in env_id:
             env = CarRacingActionWrapper(env)
     elif flatten_obs:
@@ -97,14 +109,7 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
             env = FlattenObservation(env)
         elif hasattr(env.observation_space, "shape") and len(env.observation_space.shape) > 1:
             env = FlattenObservation(env)
-        
-        if normalize_obs:
-            env = NormalizeObservation(env)
-            env = TransformObservation(env, lambda obs: np.clip(obs, -10, 10), env.observation_space)
-
-    if shape_reward and "acrobot" in env_id.lower() and not use_her:
-        env = AcrobotRewardShapingWrapper(env)
-        
+            
     return env
 
 def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, normalize_obs: bool = False, 
