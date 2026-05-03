@@ -271,6 +271,7 @@ Figure \ref{fig:results} illustrates the training progression of PPO, SAC, and T
 To overcome these inherent difficulties and enable the agent to successfully learn the swing-up behavior, we introduced a series of crucial algorithmic enhancements that directly address the environment's complexities:
 \begin{itemize}
   \item \textbf{Action Repeats:} To mitigate the credit assignment problem and facilitate the "energy pumping" strategy, we implemented momentum-building action repeats. This effectively shortens the temporal horizon and allows the agent to commit to sustained torque applications, stabilizing the chaotic dynamics.
+  \item \textbf{Upright-Start Initialization:} We modified the environment to initialize episodes near the target upright position. This curriculum-based approach allows the agent to first master the stabilization and balancing task before attempting the more difficult full swing-up phase, significantly easing the initial exploration burden. This is also a crucial reason why the reward is so high. And all algorithms perform similarly.
   \item \textbf{Reward Shaping:} We applied and carefully tuned a shaped reward function (see Equation \ref{eq:reward_shaping}) to provide a dense gradient towards the upright position, while resolving conflicts between shaped and sparse reward signals.
   \item \textbf{Gradient Clipping:} To handle the high variance in policy gradient estimation and value function approximation caused by the environment's chaotic nature, we applied gradient clipping to ensure training stability.
 \end{itemize}
