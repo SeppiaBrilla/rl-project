@@ -153,3 +153,52 @@ class GoalConditionedWrapper(gym.Wrapper):
             
         reward = sparse_reward + shaping_reward
         return reward[0] if reward.shape[0] == 1 else reward
+
+class ActionRepeatWrapper(gym.Wrapper):
+    """
+    Repeats the same action for N steps and accumulates rewards.
+    Helps the agent build momentum in underactuated systems.
+    """
+    def __init__(self, env, repeat):
+        super().__init__(env)
+        self.repeat = repeat
+
+    def step(self, action):
+        total_reward = 0.0
+        for _ in range(self.repeat):
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            total_reward += reward
+            if terminated or truncated:
+                break
+        return obs, total_reward, terminated, truncated, info
+
+class AcrobotUprightStartWrapper(gym.Wrapper):
+    """
+    Debug wrapper that initializes the Acrobot near the upright position.
+    Used to verify if the agent can learn to balance before tackling the swing-up.
+    """
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        try:
+            # Access DMC physics through Shimmy wrapper
+            physics = self.env.unwrapped.physics
+            # Joint positions: [theta1, theta2]
+            # Upright is roughly [pi, 0]
+            qpos = np.array([np.pi, 0.0]) + np.random.uniform(-0.1, 0.1, size=2)
+            qvel = np.random.uniform(-0.05, 0.05, size=2)
+            
+            physics.data.qpos[:] = qpos
+            physics.data.qvel[:] = qvel
+            
+            # Reconstruct the native DMC observation dictionary for Acrobot
+            obs = {
+                "orientations": np.array([
+                    np.cos(qpos[0]), np.sin(qpos[0]),
+                    np.cos(qpos[1]), np.sin(qpos[1])
+                ], dtype=np.float32),
+                "velocity": qvel.astype(np.float32)
+            }
+        except Exception as e:
+            print(f"Warning: Failed to set upright start: {e}")
+            
+        return obs, info

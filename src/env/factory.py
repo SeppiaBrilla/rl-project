@@ -36,33 +36,25 @@ class PyTorchImageWrapper(gym.ObservationWrapper):
         return obs.astype(np.float32) / 255.0
 
 def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, normalize_obs: bool = False, 
-               shape_reward: bool = False, use_her: bool = False, **kwargs):
+               shape_reward: bool = False, use_her: bool = False, action_repeat: int = 1, 
+               upright_start: bool = False, **kwargs):
     """
-    Factory function to create Gymnasium environments, including support for 
-    DeepMind Control Suite (via Shimmy) and standard Gymnasium environments.
-    
-    Args:
-        env_id: The environment ID (e.g., 'CartPole-v1', 'CarRacing-v2', 
-                'dm_control/cartpole-swingup-v0')
-        render_mode: Rendering mode ('human', 'rgb_array', etc.)
-        flatten_obs: Whether to flatten dict/tuple observations (default True)
-        use_her: Whether to wrap the env for Hindsight Experience Replay (default False)
-        **kwargs: Additional arguments passed to gym.make
-        
-    Returns:
-        A Gymnasium environment instance.
+    Factory function to create Gymnasium environments.
     """
     if env_id.startswith("dm_control/"):
         try:
             import shimmy
         except ImportError:
-            raise ImportError(
-                "shimmy is required for DMC environments. "
-                "Install it with `pip install shimmy[dm-control]`"
-            )
+            raise ImportError("shimmy is required for DMC environments.")
             
     # Create the environment
     env = gym.make(env_id, render_mode=render_mode, **kwargs)
+    
+    from .wrappers import ActionRepeatWrapper, AcrobotUprightStartWrapper
+    
+    # Debug Upright Start (Apply at the bottom so it returns DMC Dict)
+    if upright_start and "acrobot" in env_id.lower():
+        env = AcrobotUprightStartWrapper(env)
     
     obs_space = env.observation_space
     is_image = hasattr(obs_space, "shape") and obs_space.shape is not None and len(obs_space.shape) == 3
@@ -110,16 +102,25 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
         elif hasattr(env.observation_space, "shape") and len(env.observation_space.shape) > 1:
             env = FlattenObservation(env)
             
+    # Action Repeat (Momentum builder - apply at the end of the stack)
+    if "acrobot" in env_id.lower() and action_repeat == 1:
+        action_repeat = 4
+        
+    if action_repeat > 1:
+        env = ActionRepeatWrapper(env, action_repeat)
+            
     return env
 
 def create_vector_env(env_id: str, num_envs: int = 1, render_mode: str = None, normalize_obs: bool = False, 
-                      shape_reward: bool = False, use_her: bool = False, **kwargs):
+                      shape_reward: bool = False, use_her: bool = False, action_repeat: int = 1, 
+                      upright_start: bool = False, **kwargs):
     """
     Creates a vectorized environment.
     """
     def make_env():
         return create_env(env_id, render_mode=render_mode, normalize_obs=normalize_obs, 
-                          shape_reward=shape_reward, use_her=use_her, **kwargs)
+                          shape_reward=shape_reward, use_her=use_her, action_repeat=action_repeat,
+                          upright_start=upright_start, **kwargs)
     
     if num_envs > 1:
         # Use AsyncVectorEnv for true parallelism
