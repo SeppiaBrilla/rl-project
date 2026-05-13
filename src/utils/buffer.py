@@ -72,6 +72,45 @@ class ReplayBuffer:
             torch.as_tensor(self.dones[indices], dtype=torch.float32, device=self.device)
         )
 
+    def sample_n_step(self, batch_size: int, n: int, n_envs: int, gamma: float):
+        """
+        Sample n-step transitions. 
+        Returns: states, actions, n_step_rewards, n_step_next_states, n_step_dones
+        """
+        indices = np.random.randint(0, self.size, size=batch_size)
+        
+        batch_states = self.states[indices]
+        batch_actions = self.actions[indices]
+        
+        n_step_rewards = np.zeros(batch_size, dtype=np.float32)
+        n_step_dones = np.zeros(batch_size, dtype=np.float32)
+        
+        curr_indices = indices.copy()
+        gamma_power = 1.0
+        for i in range(n):
+            n_step_rewards += gamma_power * self.rewards[curr_indices]
+            n_step_dones = np.maximum(n_step_dones, self.dones[curr_indices])
+            
+            # Mask to avoid moving past a terminal state
+            mask = (n_step_dones == 0)
+            if not np.any(mask):
+                break
+                
+            next_indices = (curr_indices[mask] + n_envs) % self.capacity
+            curr_indices[mask] = next_indices
+            gamma_power *= gamma
+
+        batch_next_states = self.next_states[curr_indices]
+        
+        return (
+            torch.as_tensor(batch_states, dtype=torch.float32, device=self.device),
+            torch.as_tensor(batch_actions, dtype=torch.float32, device=self.device),
+            torch.as_tensor(n_step_rewards, dtype=torch.float32, device=self.device),
+            torch.as_tensor(batch_next_states, dtype=torch.float32, device=self.device),
+            torch.as_tensor(n_step_dones, dtype=torch.float32, device=self.device)
+        )
+
+
     def __len__(self):
         return self.size
 

@@ -8,7 +8,7 @@ from tqdm import tqdm
 import src
 from src.utils.logger import setup_logger
 from src.utils.buffer import ReplayBuffer, RolloutBuffer
-from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent
+from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent, GRPOAgent
 from src.env import create_env
 from src.utils.data_collector import DataCollector
 
@@ -150,6 +150,41 @@ configs = {
             "normalize_obs": True,
             "shape_reward": True,
         }
+    },
+    'GRPO': {
+        "CarRacing-v3": {
+            "lr": 5e-5,
+            "gamma": 0.99,
+            "eps_clip": 0.2,
+            "entropy_coef": 0.01,
+            "normalize_obs": True,
+            "n_policies": 4,
+            "n_groups": 2,
+        },
+        "dm_control/cartpole-swingup-v0": {
+            "lr": 3e-4,
+            "gamma": 0.99,
+            "group_size": 16,
+            "n_step": 3,
+            "beta": 0.1,
+            "entropy_coef": 0.01,
+            "max_grad_norm": 1.0,
+            "batch_size": 256,
+            "learning_starts": 5000,
+            "tau": 0.005,
+        },
+        "dm_control/acrobot-swingup-v0": {
+            "lr": 3e-4,
+            "gamma": 0.99,
+            "eps_clip": 0.2,
+            "entropy_coef": 0.01,
+            "normalize_obs": True,
+            "shape_reward": True,
+            "beta": 0.05,
+            "n_policies": 4,
+            "n_groups": 2,
+            "lambda_s": 0.01,
+        }
     }
 }
 
@@ -157,13 +192,14 @@ configs = {
 def parse_args():
     parser = argparse.ArgumentParser(description="RL Framework Training Script")
     parser.add_argument("--env", type=str, default="CartPole-v1", help="Gymnasium environment ID")
-    parser.add_argument("--algo", type=str, default="DQN", choices=["DQN", "SAC", "TD3", "PPO"], help="Algorithm to train")
+    parser.add_argument("--algo", type=str, default="DQN", choices=["DQN", "SAC", "TD3", "PPO", "GRPO"], help="Algorithm to train")
     parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
     parser.add_argument("--render", action="store_true", help="Enable rendering for debugging/visualization")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--save-model", type=str, default=None, help="Path to save the model upon completion")
     parser.add_argument("--results-file", type=str, default="results.csv", help="Path to save the training results (csv)")
     parser.add_argument("--n-envs", type=int, default=1, help="Number of parallel environments")
+    parser.add_argument("--group-size", type=int, default=8, help="Group size (M) for GRPO")
     parser.add_argument("--upright-start", action="store_true", help="Initialize Acrobot near upright (debug)")
     return parser.parse_args()
 
@@ -197,6 +233,11 @@ def main():
         agent = TD3Agent(env.single_observation_space, env.single_action_space, **configs["TD3"][args.env])
     elif args.algo == "PPO":
         agent = PPOAgent(env.single_observation_space, env.single_action_space, **configs["PPO"][args.env])
+    elif args.algo == "GRPO":
+        grpo_config = configs["GRPO"][args.env].copy()
+        if args.group_size:
+            grpo_config["group_size"] = args.group_size
+        agent = GRPOAgent(env.single_observation_space, env.single_action_space, **grpo_config)
     else:
         raise NotImplementedError(f"Algorithm {args.algo} not implemented")
         

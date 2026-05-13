@@ -108,6 +108,10 @@ def create_env(env_id: str, render_mode: str = None, flatten_obs: bool = True, n
         
     if action_repeat > 1:
         env = ActionRepeatWrapper(env, action_repeat)
+    
+    # Enable state cloning for GRPO synchronization
+    from .wrappers import StateCloningWrapper
+    env = StateCloningWrapper(env)
             
     return env
 

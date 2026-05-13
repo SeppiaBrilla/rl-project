@@ -184,6 +184,7 @@ class AcrobotUprightStartWrapper(gym.Wrapper):
             
             physics.data.qpos[:] = qpos
             physics.data.qvel[:] = qvel
+            physics.forward()
             
             # Reconstruct the native DMC observation dictionary for Acrobot
             # Order: [sin(theta1), sin(theta1+theta2), cos(theta1), cos(theta1+theta2)]
