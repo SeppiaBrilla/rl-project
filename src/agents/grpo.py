@@ -28,16 +28,29 @@ class Actor(nn.Module):
             
         self.net = nn.Sequential(
             nn.Linear(dim_state, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU()
         )
         self.mean_linear = nn.Linear(hidden_dim, dim_act)
         self.log_std_linear = nn.Linear(hidden_dim, dim_act)
         
+        # Orthogonal initialization
+        self.apply(self._init_weights)
+        
         # Action space bounds (assumed [-1, 1] for dm_control after tanh)
         self.register_buffer("action_scale", torch.tensor(1.0))
         self.register_buffer("action_bias", torch.tensor(0.0))
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
 
     def forward(self, state):
         features = self.extractor(state)
@@ -79,11 +92,22 @@ class Critic(nn.Module):
             
         self.net = nn.Sequential(
             nn.Linear(dim_state + dim_act, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
 
     def forward(self, state, action):
         features = self.extractor(state)

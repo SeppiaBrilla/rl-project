@@ -162,17 +162,16 @@ configs = {
             "n_groups": 2,
         },
         "dm_control/cartpole-swingup-v0": {
-            "lr": 3e-4, # Increased for faster initial learning
+            "lr": 3e-4,
             "gamma": 0.99,
-            "n_step": 10,
-            "beta": 0.08,
-            "entropy_coef": 0.01,
+            "group_size": 16,
+            "n_step": 3,
+            "beta": 0.1,
+            "entropy_coef": 0.05, # Increased for better exploration in sparse rewards
             "max_grad_norm": 1.0,
             "batch_size": 256,
             "learning_starts": 5000,
             "tau": 0.005,
-            "normalize_obs": True,
-            "shape_reward": True,
         },
         "dm_control/acrobot-swingup-v0": {
             "lr": 3e-4,

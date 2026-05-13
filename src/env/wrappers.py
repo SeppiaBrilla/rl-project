@@ -201,25 +201,3 @@ class AcrobotUprightStartWrapper(gym.Wrapper):
             print(f"Warning: Failed to set upright start: {e}")
             
         return obs, info
-
-class StateCloningWrapper(gym.Wrapper):
-    """
-    Exposes get_state() and set_state() for environments that support cloning.
-    Specifically implemented for dm_control (physics state).
-    """
-    def get_state(self, **kwargs):
-        try:
-            # dm_control (via shimmy)
-            physics = self.env.unwrapped.physics
-            return physics.get_state().copy()
-        except Exception:
-            return None
-
-    def set_state(self, state, **kwargs):
-        if state is None: return
-        try:
-            physics = self.env.unwrapped.physics
-            physics.set_state(state)
-            physics.forward()
-        except Exception:
-            pass
