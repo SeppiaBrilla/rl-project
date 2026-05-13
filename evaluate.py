@@ -4,17 +4,18 @@ import numpy as np
 from tqdm import tqdm
 
 from src.utils.logger import setup_logger
-from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent
+from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent, GRPOAgent
 from src.env import create_env
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL Framework Evaluation Script")
     parser.add_argument("--env", type=str, required=True, help="Gymnasium environment ID")
-    parser.add_argument("--algo", type=str, required=True, choices=["DQN", "SAC", "TD3", "PPO"], help="Algorithm name")
+    parser.add_argument("--algo", type=str, required=True, choices=["DQN", "SAC", "TD3", "PPO", "GRPO"], help="Algorithm name")
     parser.add_argument("--model-path", type=str, required=True, help="Path to the saved model file (.pt)")
     parser.add_argument("--episodes", type=int, default=5, help="Number of evaluation episodes")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--no-render", action="store_true", help="Disable rendering")
+    parser.add_argument("--normalize-obs", action="store_true", help="Enable observation normalization")
     return parser.parse_args()
 
 def main():
@@ -28,7 +29,7 @@ def main():
     render_mode = None if args.no_render else "human"
     
     logger.info(f"Setting up evaluation for {args.env} with {args.algo}")
-    env = create_env(args.env, render_mode=render_mode)
+    env = create_env(args.env, render_mode=render_mode, normalize_obs=args.normalize_obs)
     
     # Initialize Agent
     if args.algo == "DQN":
@@ -39,6 +40,9 @@ def main():
         agent = TD3Agent(env.observation_space, env.action_space)
     elif args.algo == "PPO":
         agent = PPOAgent(env.observation_space, env.action_space)
+    elif args.algo == "GRPO":
+        # GRPOAgent can be initialized with defaults for evaluation
+        agent = GRPOAgent(env.observation_space, env.action_space)
     else:
         raise NotImplementedError(f"Algorithm {args.algo} not implemented")
 
@@ -61,7 +65,7 @@ def main():
         
         while not (done or truncated):
             # Use deterministic/greedy action for evaluation
-            if args.algo == "PPO":
+            if args.algo in ["PPO", "GRPO"]:
                 action, _ = agent.select_action(state, evaluate=True)
             else:
                 action = agent.select_action(state, evaluate=True)
