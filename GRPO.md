@@ -1,40 +1,57 @@
 # Group Relative Policy Optimization (GRPO) for Continuous Control
 
-This document describes the implementation details, hyperparameters, and the core logic behind the Off-Policy GRPO agent.
+This document provides a mathematical description of the Off-Policy GRPO agent implemented in this repository.
 
-## 1. The Core Idea
+## 1. Mathematical Formulation
 
-The objective of this implementation is to adapt the **Group Relative Policy Optimization (GRPO)** algorithm—originally designed for discrete, on-policy training in Large Language Models—for **continuous control tasks** in Reinforcement Learning.
+The agent optimizes a stochastic policy $\pi_\theta(a|s)$ using an off-policy framework that combines group-relative advantages with KL-regularization.
 
-Standard GRPO avoids a separate value network by comparing multiple completions for the same state. Our implementation evolves this by integrating **off-policy learning mechanics** (inspired by SAC and TD3) to handle the sample-efficiency requirements of robotic and physical simulations.
+### A. The Actor Objective
+The policy $\pi_\theta$ is updated to maximize the following objective function:
 
-### Key Components:
-- **Group-Relative Advantages**: For each state sampled from the buffer, the actor generates a group of $G$ actions. Instead of using the absolute Q-value, the advantage for each action is calculated as its deviation from the group mean:
-  $$A_i = \frac{Q(s, a_i) - \text{mean}(Q(s, \text{group}))}{\text{std}(Q(s, \text{group}))}$$
-- **KL Regularization**: To maintain stability, we regularize the current policy against a "reference policy" (a slowly updating version of the actor).
-- **Off-Policy foundation**: Uses a Replay Buffer and Double Q-Critics to provide stable value estimates.
+$$J(\theta) = \mathbb{E}_{s \sim \mathcal{D}, a_{i} \sim \pi_\theta} \left[ \frac{1}{G} \sum_{i=1}^G A(s, a_i) \right] - \beta \mathbb{E}_{s \sim \mathcal{D}} \left[ D_{KL}(\pi_\theta(\cdot|s) \| \pi_{ref}(\cdot|s)) \right] + \eta H(\pi_\theta)$$
 
-## 2. Hyperparameters Explained
+Where:
+- $G$ is the **group size** (number of actions sampled per state).
+- $A(s, a_i)$ is the **Group-Relative Advantage**.
+- $\pi_{ref}$ is the **Reference Policy** (a slowly updated copy of the actor).
+- $\beta$ is the KL penalty coefficient.
+- $\eta$ is the entropy bonus coefficient.
 
-### Core GRPO Parameters
-*   **`group_size` (G)**: The number of actions sampled per state during the actor update. GRPO relies on this "group" to compute relative advantages. A larger group provides a more stable advantage estimate.
-*   **`beta` ($\beta$)**: The weight of the **KL Divergence penalty**. A **higher beta means more penalty**, making the policy updates more conservative.
-*   **`entropy_coef`**: Controls the **Entropy Bonus**, encouraging the policy to maintain exploration and preventing the standard deviation from collapsing too quickly.
+### B. Group-Relative Advantages
+Unlike standard Reinforcement Learning which uses a value function $V(s)$ as a baseline, GRPO computes advantages by comparing actions within a sampled group. For a group of actions $\{a_1, a_2, \dots, a_G\}$ sampled for a single state $s$, the advantage for action $a_i$ is:
 
-### Off-Policy & Critic Parameters
-*   **`n_step`**: Horizon for **Multi-step TD returns**. It looks $n$ steps ahead to calculate rewards, accelerating learning and reducing value estimation bias.
-*   **`tau` ($\tau$)**: The **Soft Update** rate for target networks (target critics and reference policy).
-*   **`learning_starts`**: The number of random steps collected before training begins.
-*   **`batch_size`**: The number of transitions sampled from the `ReplayBuffer` per gradient step.
+$$A(s, a_i) = \frac{Q(s, a_i) - \mu(Q)}{\sigma(Q) + \epsilon}$$
 
-### Optimization & Stability
-*   **`lr` (Learning Rate)**: The step size for the Adam optimizer (usually `3e-4`).
-*   **`gamma` ($\gamma$)**: The **Discount Factor** for future rewards.
-*   **`max_grad_norm`**: Threshold for **Gradient Clipping** to prevent training instability.
-*   **`policy_noise` & `noise_clip`**: Used for **Target Policy Smoothing**, adding noise to target actions during critic updates to make the value function more robust.
+Where:
+- $Q(s, a_i) = \min(Q_1(s, a_i), Q_2(s, a_i))$ (Double Q-Critic estimate).
+- $\mu(Q) = \frac{1}{G} \sum_{j=1}^G Q(s, a_j)$ is the mean value of the group.
+- $\sigma(Q)$ is the standard deviation of the group values.
 
-## 3. Implementation Details
+### C. Continuous Control via Reparameterization
+To efficiently optimize through continuous action spaces, we use the **Reparameterization Trick**. The action $a$ is sampled as:
+$$a = \text{tanh}(\mu_\theta(s) + \sigma_\theta(s) \odot \xi), \quad \xi \sim \mathcal{N}(0, I)$$
+This allows gradients to flow directly from the Q-function into the policy parameters $\theta$:
+$$\nabla_\theta J(\theta) \approx \nabla_\theta \min(Q_1(s, \pi_\theta(s, \xi)), Q_2(s, \pi_\theta(s, \xi)))$$
 
-- **Squashed Gaussian Policy**: We use a `tanh` activation on the actor's output to keep actions bounded within `[-1, 1]`, with a Jacobian correction for log-probabilities.
-- **Update Frequency**: The implementation maintains a **1:1 update-to-step ratio** (performing `n_envs` updates per environment step) to match the efficiency of SAC/TD3.
-- **Vectorization**: Action sampling and critic evaluations are fully vectorized using PyTorch to ensure high FPS on both GPU and CPU.
+## 2. Critic Architecture (Double Q-Learning)
+
+The agent maintains two critics $Q_{\phi_1}, Q_{\phi_2}$ to combat overestimation bias. They are updated using **$n$-step Temporal Difference (TD)** targets:
+
+$$y = \sum_{k=0}^{n-1} \gamma^k r_{t+k} + \gamma^n \min_{j=1,2} Q_{target, j}(s_{t+n}, a')$$
+Where $a'$ is sampled from the current policy $\pi_\theta$ with target policy smoothing.
+
+The critic loss is the Mean Squared Error:
+$$L(\phi_i) = \mathbb{E}_{(s, a, y) \sim \mathcal{D}} \left[ (Q_{\phi_i}(s, a) - y)^2 \right]$$
+
+## 3. Regularization Mechanisms
+
+### KL Divergence Penalty
+The KL penalty $D_{KL}(\pi_\theta \| \pi_{ref})$ prevents the policy from deviating too far from the reference policy in a single update. This is especially important in off-policy learning where the data in the buffer might be stale.
+For Gaussian policies $\mathcal{N}(\mu_0, \sigma_0)$ and $\mathcal{N}(\mu_1, \sigma_1)$, the KL divergence is:
+$$D_{KL} = \sum \left( \log \frac{\sigma_1}{\sigma_0} + \frac{\sigma_0^2 + (\mu_0 - \mu_1)^2}{2\sigma_1^2} - \frac{1}{2} \right)$$
+
+### Target Policy Smoothing
+During critic updates, we add small noise to the target action:
+$$a' = \pi_{target}(s_{t+n}) + \epsilon, \quad \epsilon \sim \text{clip}(\mathcal{N}(0, \tilde{\sigma}), -c, c)$$
+This smooths the value surface and prevents the policy from exploiting narrow peaks in the Q-function.
