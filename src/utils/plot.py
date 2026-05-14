@@ -10,7 +10,7 @@ import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Learning curve TD3,SAC,PPO plot Script")
-    parser.add_argument("--algo", type=str, default="PPO",nargs="+", choices=[ "SAC", "TD3", "PPO"], help="Algorithm's learning curves to plot")
+    parser.add_argument("--algo", type=str, default="PPO",nargs="+", choices=[ "SAC", "TD3", "PPO", "GRPO"], help="Algorithm's learning curves to plot")
     return parser.parse_args()
 
 

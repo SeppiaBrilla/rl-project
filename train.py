@@ -153,22 +153,24 @@ configs = {
     },
     'GRPO': {
         "CarRacing-v3": {
-            "lr": 5e-5,
+            "lr": 1e-4,               # Increased for faster convergence with stable gradients
             "gamma": 0.99,
-            "eps_clip": 0.2,
-            "entropy_coef": 0.01,
+            "n_step": 3,
+            "beta": 0.1,              # Increased KL penalty to maintain policy stability
+            "entropy_coef": 0.03,     # Reverted to standard entropy
+            "max_grad_norm": 1.0,     # Standard clipping
+            "batch_size": 128,
+            "learning_starts": 10000,
+            "tau": 0.005,
             "normalize_obs": True,
-            "n_policies": 4,
-            "n_groups": 2,
         },
         "dm_control/cartpole-swingup-v0": {
             "lr": 3e-4,
             "gamma": 0.99,
-            "group_size": 16,
-            "n_step": 3,
+            "n_step": 15,
             "beta": 0.1,
-            "entropy_coef": 0.05, # Increased for better exploration in sparse rewards
-            "max_grad_norm": 1.0,
+            "entropy_coef": 0.06,
+            "max_grad_norm": 0.9,
             "batch_size": 256,
             "learning_starts": 5000,
             "tau": 0.005,
@@ -176,14 +178,13 @@ configs = {
         "dm_control/acrobot-swingup-v0": {
             "lr": 3e-4,
             "gamma": 0.99,
-            "eps_clip": 0.2,
-            "entropy_coef": 0.01,
-            "normalize_obs": True,
-            "shape_reward": True,
-            "beta": 0.05,
-            "n_policies": 4,
-            "n_groups": 2,
-            "lambda_s": 0.01,
+            "n_step": 15,
+            "beta": 0.1,
+            "entropy_coef": 0.06,
+            "max_grad_norm": 0.9,
+            "batch_size": 256,
+            "learning_starts": 5000,
+            "tau": 0.005,
         }
     }
 }

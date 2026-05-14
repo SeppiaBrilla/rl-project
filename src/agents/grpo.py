@@ -47,24 +47,26 @@ class Actor(nn.Module):
         log_std = torch.clamp(log_std, -20, 2)
         return mean, log_std
 
-    def sample(self, state, group_size=1):
+    def sample(self, state, group_size=1, reparameterize=True):
         mean, log_std = self.forward(state)
         std = log_std.exp()
         dist = Normal(mean, std)
         
         # Sample in pre-tanh space
-        x_t = dist.sample((group_size,)) # (G, B, D)
+        if reparameterize:
+            x_t = dist.rsample((group_size,)) # (G, B, D)
+        else:
+            x_t = dist.sample((group_size,)) # (G, B, D)
         
         # Action in post-tanh space
         action = torch.tanh(x_t)
-        scaled_action = action * self.action_scale + self.action_bias
         
-        # Log-prob with tanh correction: log_prob(scaled_action) = log_prob(x_t) - log(|det(J)|)
+        # Log-probability with Jacobian correction for tanh squashing
         log_prob = dist.log_prob(x_t)
-        log_prob -= torch.log(self.action_scale * (1 - action.pow(2)) + 1e-6)
+        log_prob -= torch.log(1 - action.pow(2) + 1e-6)
         log_prob = log_prob.sum(dim=-1) # (G, B)
         
-        return scaled_action, log_prob, dist
+        return action, log_prob, dist
 
 class Critic(nn.Module):
     def __init__(self, observation_space, dim_act, hidden_dim=256):
@@ -105,7 +107,7 @@ class GRPOAgent(BaseAgent):
                  max_grad_norm=1.0,
                  tau=0.005, # Soft update for target networks
                  batch_size=256,
-                 buffer_size=1000000,
+                 buffer_size=100000,
                  learning_starts=5000,
                  policy_noise=0.2,
                  noise_clip=0.5,
@@ -201,27 +203,27 @@ class GRPOAgent(BaseAgent):
         critic_loss.backward()
         self.critic_optimizer.step()
 
-        # 2. Update Actor using Group-Relative Advantage
-        # Use detached samples for score-function gradient
-        group_actions, log_probs, dist = self.actor.sample(states, self.group_size)
+        # 2. Update Actor using Group-Relative Advantage (Reparameterized)
+        # Use rsample for lower variance gradients in continuous space
+        group_actions, log_probs, dist = self.actor.sample(states, self.group_size, reparameterize=True)
         
-        # Align for evaluation: log_probs is (G, B), group_actions is (G, B, D)
-        # We want (B, G) for log_probs
-        log_probs = log_probs.transpose(0, 1)
-        
+        # group_actions: (G, B, D)
         flat_actions = group_actions.transpose(0, 1).reshape(-1, self.dim_act)
         flat_states = states.repeat_interleave(self.group_size, dim=0)
         
+        # Compute Q-values with gradients flowing through actions
+        q1 = self.critics[0](flat_states, flat_actions).reshape(self.batch_size, self.group_size)
+        q2 = self.critics[1](flat_states, flat_actions).reshape(self.batch_size, self.group_size)
+        group_Q = torch.min(q1, q2)
+        
+        # Compute Group-Relative Advantage for logging/monitoring
         with torch.no_grad():
-            q1 = self.critics[0](flat_states, flat_actions).reshape(self.batch_size, self.group_size)
-            q2 = self.critics[1](flat_states, flat_actions).reshape(self.batch_size, self.group_size)
-            group_Q = torch.min(q1, q2)
-            
-            # Group-Relative Advantage
             mean_Q = group_Q.mean(dim=1, keepdim=True)
             std_Q = group_Q.std(dim=1, keepdim=True) + 1e-6
-            advantages = ((group_Q - mean_Q) / std_Q).detach()
-
+            # Note: We don't strictly NEED advantages for rsample, 
+            # but they can still be used for filtering or weighting.
+            # Here we follow the SAC-style maximization of min-Q.
+        
         # KL Penalty from reference policy
         with torch.no_grad():
             ref_mean, ref_log_std = self.ref_actor(states)
@@ -230,12 +232,13 @@ class GRPOAgent(BaseAgent):
         kl_div = torch.distributions.kl_divergence(dist, ref_dist).mean()
         entropy = dist.entropy().mean()
 
-        # Actor Loss (Score-function gradient + regularization)
-        actor_loss = -(advantages * log_probs).mean() + self.beta * kl_div - self.entropy_coef * entropy
+        # Actor Loss: Maximize mean(Q) - beta * KL + entropy
+        # In rsample mode, we minimize -Q
+        actor_loss = -group_Q.mean() + self.beta * kl_div - self.entropy_coef * entropy
         
         # Logging some info periodically
         if self.total_it % 500 == 0:
-             print(f"Update {self.total_it}: L_actor={actor_loss.item():.4f}, KL={kl_div.item():.4f}, Adv={advantages.abs().mean().item():.4f}, Q={group_Q.mean().item():.4f}")
+             print(f"Update {self.total_it}: L_actor={actor_loss.item():.4f}, KL={kl_div.item():.4f}, Adv={((group_Q - group_Q.mean(dim=1, keepdim=True)) / (group_Q.std(dim=1, keepdim=True) + 1e-6)).abs().mean().item():.4f}, Q={group_Q.mean().item():.4f}")
 
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
