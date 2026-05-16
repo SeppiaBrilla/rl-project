@@ -153,14 +153,14 @@ configs = {
     },
     'GRPO': {
         "CarRacing-v3": {
-            "lr": 1e-4,               # Increased for faster convergence with stable gradients
+            "lr": 1e-4,
             "gamma": 0.99,
             "n_step": 3,
-            "beta": 0.1,              # Increased KL penalty to maintain policy stability
-            "entropy_coef": 0.03,     # Reverted to standard entropy
-            "max_grad_norm": 1.0,     # Standard clipping
-            "batch_size": 128,
-            "learning_starts": 10000,
+            "beta": 0.1,
+            "entropy_coef": 0.05,
+            "max_grad_norm": 0.5,
+            "batch_size": 256,
+            "learning_starts": 5000,
             "tau": 0.005,
             "normalize_obs": True,
         },
@@ -185,6 +185,8 @@ configs = {
             "batch_size": 256,
             "learning_starts": 5000,
             "tau": 0.005,
+            "normalize_obs": True,
+            "shape_reward": True,
         }
     }
 }

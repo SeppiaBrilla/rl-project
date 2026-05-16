@@ -104,7 +104,7 @@ def plotAllEnvironments(algorithm_names):
             comparison_text = "Mann-Whitney p-values (vs PPO):\n"
             has_comparison = False
             
-            for other_algo in ['SAC', 'TD3']:
+            for other_algo in ['SAC', 'TD3', 'GRPO']:
                 if other_algo in final_rewards_data[env] and other_algo != 'PPO':
                     other_rewards = final_rewards_data[env][other_algo]
                     

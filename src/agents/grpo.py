@@ -28,8 +28,10 @@ class Actor(nn.Module):
             
         self.net = nn.Sequential(
             nn.Linear(dim_state, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU()
         )
         self.mean_linear = nn.Linear(hidden_dim, dim_act)
@@ -38,6 +40,20 @@ class Actor(nn.Module):
         # Action space bounds (assumed [-1, 1] for dm_control after tanh)
         self.register_buffer("action_scale", torch.tensor(1.0))
         self.register_buffer("action_bias", torch.tensor(0.0))
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=nn.init.calculate_gain('relu'))
+                nn.init.constant_(m.bias, 0)
+        
+        # Policy output layers should have smaller initialization
+        nn.init.orthogonal_(self.mean_linear.weight, gain=0.01)
+        nn.init.constant_(self.mean_linear.bias, 0)
+        nn.init.orthogonal_(self.log_std_linear.weight, gain=0.01)
+        nn.init.constant_(self.log_std_linear.bias, 0)
 
     def forward(self, state):
         features = self.extractor(state)
@@ -81,11 +97,22 @@ class Critic(nn.Module):
             
         self.net = nn.Sequential(
             nn.Linear(dim_state + dim_act, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                # Final layer should have gain 1.0
+                gain = 1.0 if m == self.net[-1] else nn.init.calculate_gain('relu')
+                nn.init.orthogonal_(m.weight, gain=gain)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, state, action):
         features = self.extractor(state)
@@ -98,17 +125,17 @@ class GRPOAgent(BaseAgent):
     and n-step TD with Target Policy Smoothing.
     """
     def __init__(self, observation_space, action_space, 
-                 lr=3e-4, gamma=0.99, 
+                 lr=1e-4, gamma=0.99, 
                  group_size=16,
                  n_step=3,
                  eps_clip=0.2, 
-                 beta=0.1, # KL penalty coefficient (increased for stability)
-                 entropy_coef=0.01,
-                 max_grad_norm=1.0,
-                 tau=0.005, # Soft update for target networks
-                 batch_size=256,
+                 beta=0.1, # KL penalty coefficient
+                 entropy_coef=0.05, # Slightly higher for CarRacing stability
+                 max_grad_norm=0.5, # Tighter clipping
+                 tau=0.005, 
+                 batch_size=256, # Increased for image stability
                  buffer_size=100000,
-                 learning_starts=5000,
+                 learning_starts=5000, # Start training sooner
                  policy_noise=0.2,
                  noise_clip=0.5,
                  **kwargs):
@@ -235,10 +262,6 @@ class GRPOAgent(BaseAgent):
         # Actor Loss: Maximize mean(Q) - beta * KL + entropy
         # In rsample mode, we minimize -Q
         actor_loss = -group_Q.mean() + self.beta * kl_div - self.entropy_coef * entropy
-        
-        # Logging some info periodically
-        if self.total_it % 500 == 0:
-             print(f"Update {self.total_it}: L_actor={actor_loss.item():.4f}, KL={kl_div.item():.4f}, Adv={((group_Q - group_Q.mean(dim=1, keepdim=True)) / (group_Q.std(dim=1, keepdim=True) + 1e-6)).abs().mean().item():.4f}, Q={group_Q.mean().item():.4f}")
 
         self.actor_optimizer.zero_grad()
         actor_loss.backward()

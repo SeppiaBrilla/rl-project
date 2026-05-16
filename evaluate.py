@@ -1,11 +1,13 @@
 import argparse
-import torch
+torch = None # Delayed import
 import numpy as np
 from tqdm import tqdm
+import logging
 
 from src.utils.logger import setup_logger
 from src.agents import DQNAgent, SACAgent, TD3Agent, PPOAgent, GRPOAgent
-from src.env import create_env
+from src.env import create_vector_env
+from train import configs
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL Framework Evaluation Script")
@@ -15,12 +17,14 @@ def parse_args():
     parser.add_argument("--episodes", type=int, default=5, help="Number of evaluation episodes")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--no-render", action="store_true", help="Disable rendering")
-    parser.add_argument("--normalize-obs", action="store_true", help="Enable observation normalization")
+    parser.add_argument("--legacy", action="store_true", help="Non-strict loading (for older models)")
     return parser.parse_args()
 
 def main():
     args = parse_args()
     logger = setup_logger("Evaluation")
+    
+    import torch # Import here to avoid issues with some envs
     
     # Set seeds
     np.random.seed(args.seed)
@@ -28,28 +32,42 @@ def main():
 
     render_mode = None if args.no_render else "human"
     
+    # Get environment specific configs
+    env_config = configs.get(args.algo, {}).get(args.env, {})
+    normalize_obs = env_config.get("normalize_obs", False)
+    shape_reward = env_config.get("shape_reward", False)
+    
     logger.info(f"Setting up evaluation for {args.env} with {args.algo}")
-    env = create_env(args.env, render_mode=render_mode, normalize_obs=args.normalize_obs)
+    # Use create_vector_env for 1 env to match training wrapper stack exactly
+    env = create_vector_env(args.env, num_envs=1, render_mode=render_mode, 
+                            normalize_obs=normalize_obs, shape_reward=shape_reward)
     
     # Initialize Agent
     if args.algo == "DQN":
-        agent = DQNAgent(env.observation_space, env.action_space)
+        agent = DQNAgent(env.single_observation_space, env.single_action_space)
     elif args.algo == "SAC":
-        agent = SACAgent(env.observation_space, env.action_space)
+        agent = SACAgent(env.single_observation_space, env.single_action_space, **env_config)
     elif args.algo == "TD3":
-        agent = TD3Agent(env.observation_space, env.action_space)
+        agent = TD3Agent(env.single_observation_space, env.single_action_space, **env_config)
     elif args.algo == "PPO":
-        agent = PPOAgent(env.observation_space, env.action_space)
+        agent = PPOAgent(env.single_observation_space, env.single_action_space, **env_config)
     elif args.algo == "GRPO":
-        # GRPOAgent can be initialized with defaults for evaluation
-        agent = GRPOAgent(env.observation_space, env.action_space)
+        agent = GRPOAgent(env.single_observation_space, env.single_action_space, **env_config)
     else:
         raise NotImplementedError(f"Algorithm {args.algo} not implemented")
 
     # Load Model
     logger.info(f"Loading weights from {args.model_path}")
     try:
-        agent.load(args.model_path)
+        # We need to handle the state_dict directly if legacy mode is on
+        if args.legacy:
+            ckpt = torch.load(args.model_path, map_location=agent.device)
+            agent.actor.load_state_dict(ckpt['actor'], strict=False)
+            if hasattr(agent, 'critics'):
+                agent.critics.load_state_dict(ckpt['critics'], strict=False)
+            logger.warning("Loaded model in LEGACY mode (strict=False). Performance may be degraded.")
+        else:
+            agent.load(args.model_path)
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         return
@@ -58,21 +76,22 @@ def main():
     total_rewards = []
     
     for ep in range(args.episodes):
-        state, info = env.reset()
+        state = env.reset()
+        if isinstance(state, tuple): state = state[0]
+        
         episode_reward = 0
         done = False
-        truncated = False
         
-        while not (done or truncated):
+        while not done:
             # Use deterministic/greedy action for evaluation
             if args.algo in ["PPO", "GRPO"]:
                 action, _ = agent.select_action(state, evaluate=True)
             else:
                 action = agent.select_action(state, evaluate=True)
             
-            next_state, reward, done, truncated, info = env.step(action)
-            state = next_state
-            episode_reward += reward
+            state, reward, terminated, truncated, info = env.step(action)
+            episode_reward += reward[0] # VectorEnv rewards are arrays
+            done = terminated[0] or truncated[0]
             
         total_rewards.append(episode_reward)
         logger.info(f"Episode {ep + 1}: Final Reward = {episode_reward:.2f}")
